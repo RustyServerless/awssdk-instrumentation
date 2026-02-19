@@ -1,0 +1,45 @@
+[package]
+name = "awssdk-instrumentation"
+version = "0.0.0"
+rust-version = "1.85.0"
+edition = "2024"
+authors = ["Jérémie RODON <jeremie.rodon@gmail.com>"]
+license = "MIT"
+description = "Out-of-the-box instrumentation for the AWS SDK for Rust, with special care for code running on AWS Lambda"
+repository = "https://github.com/RustyServerless/awssdk-instrumentation"
+documentation = "https://docs.rs/awssdk-instrumentation"
+readme = "README.md"
+keywords = ["aws", "otel", "xray", "lambda", "serverless"]
+categories = ["development-tools::debugging"]
+
+[dependencies]
+# lambda_runtime = "1"
+# aws_lambda_events = "1"
+# aws-config = { version = "1.8", features = ["behavior-version-latest"] }
+# aws-smithy-runtime-api = "1"
+# aws-smithy-types = "1"
+# aws-types = "1"
+# aws-sdk-dynamodb = "1.101"
+
+# tokio = { version = "1", features = ["macros"] }
+# pin-project = "1"
+
+# serde = { version = "1.0", features = ["derive"] }
+# serde_json = "1.0"
+
+# uuid = { version = "1.0", features = ["v4"] }
+
+# # Tracing
+# tracing = "0.1"
+# tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+# tracing-opentelemetry = { version = "0.32.0", default-features = false }
+
+# # OpenTelemetry
+# opentelemetry = { version = "0.31.0" }
+# opentelemetry_sdk = { version = "0.31.0" }
+# opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
+# opentelemetry-aws = { version = "0.19.0", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"] }
+
+
+# [patch.crates-io]
+# opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }

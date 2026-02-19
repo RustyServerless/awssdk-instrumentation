@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -e
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only)
+
+# Check if any Rust-related files are staged
+RUST_CHANGES=$(echo "$STAGED_FILES" | grep -E "^(src/|Cargo.toml|Cargo.lock)" || true)
+
+# If no Rust-related files are changed, exit early
+if [ -z "$RUST_CHANGES" ]; then
+    echo "No Rust-related files changed, skipping checks..."
+    exit 0
+fi
+
+echo "Running pre-commit checks on staged files..."
+
+# Ensure working directory is clean for checks
+git stash push -q --include-untracked --keep-index
+
+# Run checks in a subshell to ensure we always restore the working tree
+if (
+    total_errors=0
+    # Check formatting only on staged Rust files
+    echo "Checking formatting..."
+    cargo fmt --check
+    ((total_errors += $?))
+
+    # Run clippy
+    echo "Running clippy..."
+    cargo clippy --all-targets --all-features -- -D warnings
+    ((total_errors += $?))
+
+    # Check documentation for modified files
+    echo "Checking documentation..."
+    RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps --document-private-items
+    ((total_errors += $?))
+
+    # Run tests that could be affected by the changes
+    echo "Running tests..."
+    cargo test --all-features
+    ((total_errors += $?))
+
+    [ $total_errors -eq 0 ]
+) ; then
+    CHECK_STATUS=0
+else
+    CHECK_STATUS=1
+fi
+
+# Restore working tree state
+if git stash list | grep -q "stash@{0}"; then
+    echo "Restoring working tree state..."
+    git stash pop -q
+fi
+
+# Exit with the status from our checks
+if [ $CHECK_STATUS -eq 0 ]; then
+    echo "All pre-commit checks passed!"
+    exit 0
+else
+    echo "Pre-commit checks failed!"
+    exit 1
+fi
