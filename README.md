@@ -76,4 +76,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Jérémie RODON ([@JeremieRodon](https://github.com/JeremieRodon))
 
 If you find this crate useful, please star the repository and share your feedback!
->>>>>>> wip
