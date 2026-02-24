@@ -12,34 +12,59 @@ readme = "README.md"
 keywords = ["aws", "otel", "xray", "lambda", "serverless"]
 categories = ["development-tools::debugging"]
 
+
 [dependencies]
-# lambda_runtime = "1"
-# aws_lambda_events = "1"
-# aws-config = { version = "1.8", features = ["behavior-version-latest"] }
-# aws-smithy-runtime-api = "1"
-# aws-smithy-types = "1"
-# aws-types = "1"
-# aws-sdk-dynamodb = "1.101"
+log = "0.4"
 
-# tokio = { version = "1", features = ["macros"] }
-# pin-project = "1"
+# Core — always required
+aws-smithy-runtime-api = { version = "1", features = ["client"] }
+aws-smithy-types = "1"
+aws-types = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+opentelemetry = "0.31"
+opentelemetry_sdk = "0.31"
+opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
 
-# serde = { version = "1.0", features = ["derive"] }
-# serde_json = "1.0"
+# Backend: tracing
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"], optional = true }
+tracing-opentelemetry = { version = "0.32", default-features = false, optional = true }
 
-# uuid = { version = "1.0", features = ["v4"] }
+# Environment: Lambda
+lambda_runtime = { version = "1", optional = true }
+aws_lambda_events = { version = "1", optional = true }
+tokio = { version = "1", features = ["macros"], optional = true }
+pin-project = { version = "1", optional = true }
 
-# # Tracing
-# tracing = "0.1"
-# tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-# tracing-opentelemetry = { version = "0.32.0", default-features = false }
+# Extraction: per-service SDK dependencies
+aws-sdk-dynamodb = { version = "1", optional = true }
+aws-sdk-s3 = { version = "1", optional = true }
+aws-sdk-sqs = { version = "1", optional = true }
 
-# # OpenTelemetry
-# opentelemetry = { version = "0.31.0" }
-# opentelemetry_sdk = { version = "0.31.0" }
-# opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
-# opentelemetry-aws = { version = "0.19.0", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"] }
+# Export: X-Ray
+opentelemetry-aws = { version = "0.19", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
 
 
-# [patch.crates-io]
-# opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }
+[features]
+default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray-daemon"]
+
+# --- Backend features ---
+tracing-backend = ["dep:tracing", "dep:tracing-opentelemetry", "dep:tracing-opentelemetry"]
+otel-backend = []
+
+# --- Environment features ---
+env-lambda = ["dep:lambda_runtime", "dep:aws_lambda_events", "dep:tokio", "dep:pin-project"]
+env-ecs = []
+env-eks = []
+env-ec2 = []
+
+# --- Extraction features ---
+extract-dynamodb = ["dep:aws-sdk-dynamodb"]
+extract-s3 = ["dep:aws-sdk-s3"]
+extract-sqs = ["dep:aws-sdk-sqs"]
+
+# --- Export features ---
+export-xray-daemon = ["dep:opentelemetry-aws"]
+
+[patch.crates-io]
+opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }

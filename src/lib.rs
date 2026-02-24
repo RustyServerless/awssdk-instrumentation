@@ -1,14 +1,13 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+// Crate root — re-exports and feature-gated module declarations.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(not(any(feature = "otel-backend", feature = "tracing-backend")))]
+compile_error!("At least one of \"otel-backend\" or \"tracing-backend\" features must be enabled");
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod interceptor;
+
+#[cfg(feature = "env-lambda")]
+pub mod lambda;
+
+pub mod env;
+
+pub mod init;
