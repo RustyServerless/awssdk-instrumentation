@@ -10,7 +10,7 @@ macro_rules! make_lambda_runtime {
     (
         internal
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)+
@@ -19,19 +19,24 @@ macro_rules! make_lambda_runtime {
         $(
             $crate::aws_sdk_client_provider!($name() -> $client);
         )+
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer ; with_code sdk_config_init().await;);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer ; with_code sdk_config_init().await;);
     };
     (
         internal
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
         runtime_layer = $runtime_layer:ty ;
         $(with_code $($code:tt)+)?
     ) => {
         #[$crate::lambda::macros::tokio::main]
         async fn main() -> Result<(), lambda_runtime::Error> {
-            let tracer_provider = $tracer_provider;
+
+            const _: fn() = || {
+                fn _test_telemetry_init(f: fn() -> opentelemetry_sdk::trace::SdkTracerProvider) {}
+                _test_telemetry_init($telemetry_init)
+            };
+            let tracer_provider = $telemetry_init();
 
             $($($code)+)?
 
@@ -58,57 +63,57 @@ macro_rules! make_lambda_runtime {
     // All 3 optional args present, 6 combinations
     (
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         trigger = $trigger:expr,
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         runtime_layer = $runtime_layer:ty,
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
         runtime_layer = $runtime_layer:ty,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
         runtime_layer = $runtime_layer:ty,
         trigger = $trigger:expr,
-        tracer_provider = $tracer_provider:expr
+        telemetry_init = $telemetry_init:ident
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
         trigger = $trigger:expr,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
         trigger = $trigger:expr,
         runtime_layer = $runtime_layer:ty,
-        tracer_provider = $tracer_provider:expr
+        telemetry_init = $telemetry_init:ident
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     // Only runtime_layer and trigger, 2 combinations
     (
@@ -117,7 +122,7 @@ macro_rules! make_lambda_runtime {
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $crate::init::default_telemetry_init(), trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
@@ -125,41 +130,41 @@ macro_rules! make_lambda_runtime {
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $crate::init::default_telemetry_init(), trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     // Only runtime_layer and tracer_provider, 2 combinations
     (
         $handler:ident,
         runtime_layer = $runtime_layer:ty,
-        tracer_provider = $tracer_provider:expr
+        telemetry_init = $telemetry_init:ident
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     (
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     // Only tracer_provider and trigger, 2 combinations
     (
         $handler:ident,
         trigger = $trigger:expr,
-        tracer_provider = $tracer_provider:expr
+        telemetry_init = $telemetry_init:ident
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
     };
     (
         $handler:ident,
-        tracer_provider = $tracer_provider:expr,
+        telemetry_init = $telemetry_init:ident,
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
     };
     // Only one optional parameter, 3 combinations
     (
@@ -167,24 +172,24 @@ macro_rules! make_lambda_runtime {
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $crate::init::default_telemetry_init(), trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
     };
     (
         $handler:ident,
-        tracer_provider = $tracer_provider:expr
+        telemetry_init = $telemetry_init:ident
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $tracer_provider, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
     };
     (
         $handler:ident,
         runtime_layer = $runtime_layer:ty
         $(, $name:ident() -> $client:ty)*
     ) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $crate::init::default_telemetry_init(), trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $runtime_layer $(,$name() -> $client)*);
     };
     // No optional parameter
     ($handler:ident $(, $name:ident() -> $client:ty)*) => {
-        make_lambda_runtime!(internal $handler, tracer_provider = $crate::init::default_telemetry_init(), trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
+        make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, runtime_layer = $crate::lambda::layer::DefaultTracingLayer<_> $(,$name() -> $client)*);
     };
 }
