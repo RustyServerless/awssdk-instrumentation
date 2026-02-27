@@ -20,7 +20,6 @@ log = "0.4"
 aws-smithy-runtime-api = { version = "1", features = ["client"] }
 aws-smithy-types = "1"
 aws-types = "1"
-aws-config = { version = "1", features = ["behavior-version-latest"] }
 opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
 opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
@@ -32,8 +31,6 @@ tracing-opentelemetry = { version = "0.32", default-features = false, optional =
 
 # Environment: Lambda
 lambda_runtime = { version = "1", optional = true }
-aws_lambda_events = { version = "1", optional = true }
-tokio = { version = "1", features = ["macros"], optional = true }
 pin-project = { version = "1", optional = true }
 
 # Extraction: per-service SDK dependencies
@@ -49,11 +46,11 @@ opentelemetry-aws = { version = "0.19", features = ["xray-exporter", "xray-daemo
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray-daemon"]
 
 # --- Backend features ---
-tracing-backend = ["dep:tracing", "dep:tracing-opentelemetry", "dep:tracing-opentelemetry"]
+tracing-backend = ["dep:tracing", "dep:tracing-opentelemetry", "dep:tracing-subscriber"]
 otel-backend = []
 
 # --- Environment features ---
-env-lambda = ["dep:lambda_runtime", "dep:aws_lambda_events", "dep:tokio", "dep:pin-project"]
+env-lambda = ["dep:lambda_runtime", "dep:pin-project"]
 env-ecs = []
 env-eks = []
 env-ec2 = []

@@ -10,6 +10,7 @@ use tracing_subscriber::{Layer, registry::LookupSpan};
 
 use crate::env::default_resource;
 
+#[inline(always)]
 pub fn default_telemetry_init() -> SdkTracerProvider {
     let tracer_provider = default_tracer_provider();
     global::set_tracer_provider(tracer_provider.clone());
@@ -35,6 +36,7 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
     tracer_provider
 }
 
+#[inline(always)]
 pub fn default_tracer_provider() -> SdkTracerProvider {
     let builder = SdkTracerProvider::builder()
         .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
@@ -55,6 +57,7 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
 }
 
 #[cfg(feature = "tracing-backend")]
+#[inline(always)]
 pub fn default_tracing_otel_layer<S, Tracer>(tracer: Tracer) -> impl Layer<S>
 where
     Tracer: OtelTracer + 'static,
@@ -76,6 +79,7 @@ where
 }
 
 #[cfg(feature = "tracing-backend")]
+#[inline(always)]
 pub fn default_tracing_console_layer<S>() -> impl Layer<S>
 where
     S: Subscriber + for<'any> LookupSpan<'any>,
@@ -89,6 +93,7 @@ where
 }
 
 #[macro_export]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! aws_sdk_config_provider {
     () => {
         static AWS_SDK_CONFIG: ::std::sync::OnceLock<::aws_config::SdkConfig> =
@@ -99,7 +104,7 @@ macro_rules! aws_sdk_config_provider {
 
         const _: fn() = || {
             // Compile-time assertion that `aws_sdk_config` is declared at the root
-            $crate::aws_sdk_config();
+            crate::aws_sdk_config();
         };
 
         #[deny(dead_code)]
@@ -112,13 +117,14 @@ macro_rules! aws_sdk_config_provider {
 }
 
 #[macro_export]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! aws_sdk_client_provider {
     ($name:ident() -> $client:ty, interceptor = $interceptor:expr) => {
         fn $name() -> $client {
             static CLIENT: ::std::sync::OnceLock<$client> = ::std::sync::OnceLock::new();
             CLIENT
                 .get_or_init(|| {
-                    let config = $crate::aws_sdk_config().into();
+                    let config = aws_sdk_config().into();
                     // The false branch is to force type inference of `config`
                     // to the correct one for the given Client type
                     if false {
@@ -131,7 +137,7 @@ macro_rules! aws_sdk_client_provider {
         }
         const _: fn() = || {
             // Compile-time assertion that function is declared at the root
-            $crate::$name();
+            crate::$name();
         };
     };
     ($name:ident() -> $client:ty, no_interceptor) => {
@@ -147,6 +153,6 @@ macro_rules! aws_sdk_client_provider {
         };
     };
     ($name:ident() -> $client:ty) => {
-        aws_sdk_client_provider!($name() -> $client, interceptor = $crate::interceptor::DefaultInterceptor::new());
+        $crate::aws_sdk_client_provider!($name() -> $client, interceptor = $crate::interceptor::DefaultInterceptor::new());
     };
 }
