@@ -42,7 +42,7 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
         .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
         .with_resource(default_resource());
 
-    #[cfg(feature = "export-xray-daemon")]
+    #[cfg(feature = "export-xray")]
     let builder = {
         use opentelemetry_aws::{
             trace::XrayIdGenerator,

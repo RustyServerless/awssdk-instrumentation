@@ -11,3 +11,6 @@ pub mod lambda;
 pub mod env;
 
 pub mod init;
+
+#[cfg(feature = "export-xray")]
+pub use opentelemetry_aws;

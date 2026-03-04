@@ -43,7 +43,7 @@ opentelemetry-aws = { version = "0.19", features = ["xray-exporter", "xray-daemo
 
 
 [features]
-default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray-daemon"]
+default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
 
 # --- Backend features ---
 tracing-backend = ["dep:tracing", "dep:tracing-opentelemetry", "dep:tracing-subscriber"]
@@ -61,7 +61,7 @@ extract-s3 = ["dep:aws-sdk-s3"]
 extract-sqs = ["dep:aws-sdk-sqs"]
 
 # --- Export features ---
-export-xray-daemon = ["dep:opentelemetry-aws"]
+export-xray = ["dep:opentelemetry-aws"]
 
 [patch.crates-io]
 opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }
