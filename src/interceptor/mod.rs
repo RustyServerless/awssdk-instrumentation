@@ -329,8 +329,56 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
             Some(Ok(output)) => {
                 call_extractors!(self service operation extract_output output_hooks output span);
             }
-            Some(Err(_orchestration_error)) => todo!(),
-            None => todo!(),
+            Some(Err(orchestration_error)) => {
+                #[cfg(feature = "tracing-backend")]
+                let paused = SpanPauser::pause_until(|span| {
+                    span.metadata()
+                        .map(|metadata| metadata.target().contains("::operation::"))
+                        .unwrap_or_default()
+                });
+                if let Some(op_error) = orchestration_error.as_operation_error() {
+                    // #[cfg(not(feature = "tracing-backend"))]
+                    log::error!("{op_error}");
+
+                    #[cfg(feature = "tracing-backend")]
+                    if let Some((_guard, span)) = paused {
+                        ::tracing::error!(
+                            parent: span,
+                            // error = op_error as &(dyn core::error::Error + 'static),
+                            error = %op_error,
+                        );
+                    }
+                } else if let Some(con_error) = orchestration_error.as_connector_error() {
+                    // #[cfg(not(feature = "tracing-backend"))]
+                    log::error!("{con_error}");
+
+                    #[cfg(feature = "tracing-backend")]
+                    if let Some((_guard, span)) = paused {
+                        ::tracing::error!(
+                            parent: span,
+                            // con_error = con_error as &(dyn core::error::Error + 'static),
+                            error = %con_error,
+                        );
+                    }
+                } else {
+                    // #[cfg(not(feature = "tracing-backend"))]
+                    log::error!("{orchestration_error}");
+
+                    #[cfg(feature = "tracing-backend")]
+                    if let Some((_guard, span)) = paused {
+                        ::tracing::error!(
+                            parent: span,
+                            // orchestration_error = orchestration_error as &(dyn core::error::Error + 'static),
+                            error = %orchestration_error,
+                        );
+                    }
+                }
+            }
+            None => {
+                log::debug!("No output received");
+                #[cfg(feature = "tracing-backend")]
+                ::tracing::debug!("No output received");
+            }
         }
 
         Ok(())
