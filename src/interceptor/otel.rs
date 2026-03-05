@@ -71,20 +71,24 @@ impl Intercept for OtelInterceptor {
         cfg: &mut ConfigBag,
     ) -> Result<(), BoxError> {
         let start_time = opentelemetry::time::now();
-        let (service, operation) = extract_service_operation(cfg);
         let mut span = opentelemetry::global::tracer("").build(
-            SpanBuilder::from_name(format!("{service}.{operation}"))
+            SpanBuilder::from_name("Service.Operation place holder")
                 .with_start_time(start_time)
                 .with_kind(SpanKind::Client)
-                .with_attributes([
-                    KeyValue::new(semco::RPC_SYSTEM, "aws-api"),
-                    KeyValue::new(semco::RPC_SERVICE, service.to_owned()),
-                    KeyValue::new(semco::RPC_METHOD, operation.to_owned()),
-                ]),
+                .with_attributes(Some(KeyValue::new(semco::RPC_SYSTEM, "aws-api"))),
         );
 
         self.extractor
             .read_before_execution(context, cfg, &mut span)?;
+
+        // That's only available *AFTER* extractor.read_before_execution
+        let (service, operation) = extract_service_operation(cfg);
+
+        span.update_name(format!("{service}.{operation}"));
+        span.set_attributes([
+            KeyValue::new(semco::RPC_SERVICE, service.to_owned()),
+            KeyValue::new(semco::RPC_METHOD, operation.to_owned()),
+        ]);
 
         cfg.interceptor_state().store_put(StorableOption::new(span));
         Ok(())

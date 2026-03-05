@@ -23,9 +23,10 @@ aws-types = "1"
 opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
 opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
+# tracing is *always* required because it is the only way to extract the Service.Operation for interceptor
+tracing = { version = "0.1"}
 
 # Backend: tracing
-tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"], optional = true }
 tracing-opentelemetry = { version = "0.32", default-features = false, optional = true }
 
@@ -46,7 +47,7 @@ opentelemetry-aws = { version = "0.19", features = ["xray-exporter", "xray-daemo
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
 
 # --- Backend features ---
-tracing-backend = ["dep:tracing", "dep:tracing-opentelemetry", "dep:tracing-subscriber"]
+tracing-backend = ["dep:tracing-opentelemetry", "dep:tracing-subscriber"]
 otel-backend = []
 
 # --- Environment features ---

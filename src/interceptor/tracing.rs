@@ -21,7 +21,10 @@ use opentelemetry::{Value, trace::Status};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use super::{DefaultExtractor, SpanWrite, utils::StorableOption};
+use super::{
+    DefaultExtractor, SpanWrite,
+    utils::{SpanPauser, StorableOption},
+};
 
 impl SpanWrite for Span {
     fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
@@ -30,55 +33,6 @@ impl SpanWrite for Span {
 
     fn set_status(&mut self, status: Status) {
         OpenTelemetrySpanExt::set_status(self, status);
-    }
-}
-
-struct PausedSpanGuard {
-    paused_spans: Vec<Span>,
-}
-impl Drop for PausedSpanGuard {
-    fn drop(&mut self) {
-        // When droping, re-enable the spans in the reverse order of disablement
-        while let Some(span) = self.paused_spans.pop() {
-            log::trace!("re-enabling span: {span:?}");
-            tracing::dispatcher::get_default(|d| d.enter(&span.id().expect("enabled span has id")));
-        }
-    }
-}
-
-struct SpanPauser;
-
-impl SpanPauser {
-    fn pause_until<F: Fn(&Span) -> bool>(predicate: F) -> Option<(PausedSpanGuard, Span)> {
-        let mut guard = PausedSpanGuard {
-            paused_spans: vec![],
-        };
-
-        loop {
-            // Get the current span
-            let span = Span::current();
-
-            // If it is disabled, we consider we cannot go further up
-            if span.is_disabled() {
-                log::trace!("hit disabled span: {span:?}");
-                break;
-            }
-
-            // If it matches the predicate, then return it as it is the one we are looking for
-            if predicate(&span) {
-                log::trace!("span match predicate: {span:?}");
-                return Some((guard, span));
-            }
-
-            // Else disable the span, store it, and loop around to test the parent.
-            log::trace!("disabling span temporarilly: {span:?}");
-            tracing::dispatcher::get_default(|d| d.exit(&span.id().expect("enabled span has id")));
-            guard.paused_spans.push(span);
-        }
-
-        // Re-enable the paused spans if any
-        drop(guard);
-        None
     }
 }
 

@@ -23,7 +23,7 @@ use aws_types::{region::Region, request_id::RequestId};
 use opentelemetry::{Value, trace::Status};
 use opentelemetry_semantic_conventions::attribute as semco;
 
-use utils::extract_service_operation;
+use utils::{AwsSdkOperation, SpanPauser, extract_service_operation};
 
 // Backend-agnostic interface for injecting attributes and status into a span.
 pub trait SpanWrite {
@@ -241,13 +241,34 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
                 .expect("region MUST be configured on requests")
                 .to_string(),
         );
+        let sdk_operation = if let Some((_guard, span)) = SpanPauser::pause_until(|span| {
+            span.metadata()
+                .map(|metadata| metadata.target().contains("::operation::"))
+                .unwrap_or_default()
+        }) {
+            let span_name = span
+                .metadata()
+                .ok_or("tracing::Span metadata not enabled")?
+                .name();
+            let (service, operation) = span_name.split_once('.').ok_or_else(|| {
+                format!("AWS SDK operation top-level tracing:Span name does not have the expected form: {span_name}, it likely means AWS changed their API, please contact the maintainer immediatly.")
+            })?;
+            AwsSdkOperation::new(service, operation)
+        } else {
+            return Err(
+                "AWS SDK operation top-level tracing:Span not found, it likely means AWS changed their API, please contact the maintainer immediatly.",
+            )?;
+        };
 
-        let (service, operation) = extract_service_operation(cfg);
+        let service = sdk_operation.service();
+        let operation = sdk_operation.operation();
 
         let input = context.input();
         log::debug!("INPUT: {:?}", input);
 
         call_extractors!(self service operation extract_input input_hooks input span);
+
+        cfg.interceptor_state().store_put(sdk_operation);
 
         Ok(())
     }
