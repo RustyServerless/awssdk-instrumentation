@@ -1,5 +1,6 @@
 use opentelemetry::{SpanId, TraceFlags, TraceId};
 
+#[derive(Debug)]
 pub(super) struct XRayTraceHeader {
     pub(super) trace_id: TraceId,
     pub(super) parent_id: SpanId,
@@ -15,6 +16,7 @@ impl core::str::FromStr for XRayTraceHeader {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        dbg!(s);
         let mut xray_header = Self {
             trace_id: TraceId::INVALID,
             parent_id: SpanId::INVALID,
@@ -64,7 +66,7 @@ impl core::str::FromStr for XRayTraceHeader {
 
 /// Represent the possible values for the OpenTelemetry `faas.trigger` attribute.
 /// See <https://opentelemetry.io/docs/specs/semconv/attributes-registry/faas/> for more details.
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub enum OTelFaasTrigger {
     /// A response to some data source operation such as a database or filesystem read/write

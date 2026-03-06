@@ -22,6 +22,7 @@ use utils::XRayTraceHeader;
 // Tower Layer for Lambda invocations — creates a span per invocation,
 // extracts _X_AMZN_TRACE_ID, sets invocation attributes, flushes exporter.
 
+#[derive(Debug)]
 pub struct InvocationContext {
     xray_trace_header: Option<XRayTraceHeader>,
     function_arn: String,
@@ -128,12 +129,14 @@ where
             })
             .to_owned();
 
+        dbg!(&account_id);
         let xray_trace_header = req.context.xray_trace_id.as_ref().and_then(|trace_id| {
             trace_id
                 .parse()
                 .map_err(|e| log::warn!("Could not parse XRayTraceHeader: {e}"))
                 .ok()
         });
+        dbg!(&xray_trace_header);
 
         let invocation_context = InvocationContext {
             xray_trace_header,
@@ -143,8 +146,9 @@ where
             trigger: self.trigger,
             is_coldstart: self.coldstart,
         };
+        dbg!(&invocation_context);
 
-        // Will only be true the first time this is called
+        // Next invocation won't be cold starts by definition
         self.coldstart = false;
 
         FlushedFuture {
