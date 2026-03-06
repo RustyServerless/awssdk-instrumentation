@@ -10,6 +10,7 @@ impl XRayTraceHeader {
     const ROOT: &str = "Root";
     const PARENT: &str = "Parent";
     const SAMPLE: &str = "Sampled";
+    const LINEAGE: &str = "Lineage";
     const HEADER_DELIMITER: &str = ";";
 }
 impl core::str::FromStr for XRayTraceHeader {
@@ -51,6 +52,9 @@ impl core::str::FromStr for XRayTraceHeader {
                         _ => return Err("Invalid Trace header".to_owned()),
                     };
                     sampled_collected = true;
+                }
+                Self::LINEAGE => {
+                    // Ignored
                 }
                 _ => return Err("Invalid Trace header".to_owned()),
             }
