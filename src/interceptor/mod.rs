@@ -233,7 +233,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::debug!("CFG: {:?}", cfg);
+        log::trace!("CFG: {:?}", cfg);
 
         span.set_attribute(
             semco::CLOUD_REGION,
@@ -264,7 +264,8 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         let operation = sdk_operation.operation();
 
         let input = context.input();
-        log::debug!("INPUT: {:?}", input);
+
+        log::trace!("INPUT: {:?}", input);
 
         call_extractors!(self service operation extract_input input_hooks input span);
 
@@ -279,12 +280,13 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::debug!("CFG: {:?}", cfg);
+        log::trace!("CFG: {:?}", cfg);
 
         let (service, operation) = extract_service_operation(cfg);
 
         let request = context.request();
-        log::debug!("REQUEST: {:?}", request);
+
+        log::trace!("REQUEST: {:?}", request);
 
         call_extractors!(self service operation extract_request request_hooks request span);
 
@@ -297,15 +299,16 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::debug!("CFG: {:?}", cfg);
+        log::trace!("CFG: {:?}", cfg);
 
         let (service, operation) = extract_service_operation(cfg);
 
         let response = context.response();
-        log::debug!("RESPONSE: {:?}", response);
+
+        log::trace!("RESPONSE: {:?}", response);
 
         if let Some(req_id) = RequestId::request_id(response) {
-            log::debug!("REQ_ID: {req_id}");
+            log::trace!("REQ_ID: {req_id}");
             span.set_attribute(semco::AWS_REQUEST_ID, req_id.to_owned());
         }
 
@@ -319,65 +322,29 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::debug!("CFG: {:?}", cfg);
+        log::trace!("CFG: {:?}", cfg);
+
         let (service, operation) = extract_service_operation(cfg);
 
         let ouput_or_error = context.output_or_error();
-        log::debug!("OUTPUT_OR_ERROR: {:?}", ouput_or_error);
+
+        log::trace!("OUTPUT_OR_ERROR: {:?}", ouput_or_error);
 
         match ouput_or_error {
             Some(Ok(output)) => {
                 call_extractors!(self service operation extract_output output_hooks output span);
             }
             Some(Err(orchestration_error)) => {
-                #[cfg(feature = "tracing-backend")]
-                let paused = SpanPauser::pause_until(|span| {
-                    span.metadata()
-                        .map(|metadata| metadata.target().contains("::operation::"))
-                        .unwrap_or_default()
-                });
                 if let Some(op_error) = orchestration_error.as_operation_error() {
-                    // #[cfg(not(feature = "tracing-backend"))]
-                    log::error!("{op_error}");
-
-                    #[cfg(feature = "tracing-backend")]
-                    if let Some((_guard, span)) = paused {
-                        ::tracing::error!(
-                            parent: span,
-                            // error = op_error as &(dyn core::error::Error + 'static),
-                            error = %op_error,
-                        );
-                    }
+                    log::debug!("{op_error:?}");
                 } else if let Some(con_error) = orchestration_error.as_connector_error() {
-                    // #[cfg(not(feature = "tracing-backend"))]
-                    log::error!("{con_error}");
-
-                    #[cfg(feature = "tracing-backend")]
-                    if let Some((_guard, span)) = paused {
-                        ::tracing::error!(
-                            parent: span,
-                            // con_error = con_error as &(dyn core::error::Error + 'static),
-                            error = %con_error,
-                        );
-                    }
+                    log::debug!("{con_error:?}");
                 } else {
-                    // #[cfg(not(feature = "tracing-backend"))]
-                    log::error!("{orchestration_error}");
-
-                    #[cfg(feature = "tracing-backend")]
-                    if let Some((_guard, span)) = paused {
-                        ::tracing::error!(
-                            parent: span,
-                            // orchestration_error = orchestration_error as &(dyn core::error::Error + 'static),
-                            error = %orchestration_error,
-                        );
-                    }
+                    log::debug!("{orchestration_error:?}");
                 }
             }
             None => {
                 log::debug!("No output received");
-                #[cfg(feature = "tracing-backend")]
-                ::tracing::debug!("No output received");
             }
         }
 
