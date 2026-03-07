@@ -12,7 +12,10 @@ pub fn lambda_resource() -> Resource {
             [
                 Some(KeyValue::new(semco::CLOUD_PROVIDER, "aws")),
                 Some(KeyValue::new(semco::CLOUD_PLATFORM, "aws_lambda")),
-                Some(KeyValue::new("telemetry.auto.version", "0.0.1-jro")),
+                Some(KeyValue::new(
+                    "telemetry.auto.version",
+                    concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION")),
+                )),
                 env::var("AWS_REGION")
                     .ok()
                     .map(|v| KeyValue::new(semco::CLOUD_REGION, v)),
