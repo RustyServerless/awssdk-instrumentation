@@ -17,7 +17,6 @@ impl core::str::FromStr for XRayTraceHeader {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        dbg!(s);
         let mut xray_header = Self {
             trace_id: TraceId::INVALID,
             parent_id: SpanId::INVALID,

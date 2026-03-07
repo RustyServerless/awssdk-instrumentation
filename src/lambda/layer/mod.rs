@@ -113,10 +113,6 @@ where
     }
 
     fn call(&mut self, req: LambdaInvocation) -> Self::Future {
-        dbg!(&req.parts);
-        dbg!(&req.body);
-        dbg!(&req.context);
-
         let account_id = self
             .account_id
             .get_or_insert_with(|| {
@@ -129,14 +125,12 @@ where
             })
             .to_owned();
 
-        dbg!(&account_id);
         let xray_trace_header = req.context.xray_trace_id.as_ref().and_then(|trace_id| {
             trace_id
                 .parse()
                 .map_err(|e| log::warn!("Could not parse XRayTraceHeader: {e}"))
                 .ok()
         });
-        dbg!(&xray_trace_header);
 
         let invocation_context = InvocationContext {
             xray_trace_header,
@@ -146,7 +140,6 @@ where
             trigger: self.trigger,
             is_coldstart: self.coldstart,
         };
-        dbg!(&invocation_context);
 
         // Next invocation won't be cold starts by definition
         self.coldstart = false;
