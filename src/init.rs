@@ -39,7 +39,7 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
 #[inline(always)]
 pub fn default_tracer_provider() -> SdkTracerProvider {
     let builder = SdkTracerProvider::builder()
-        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
+        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOff)))
         .with_resource(default_resource());
 
     #[cfg(feature = "export-xray")]
@@ -127,6 +127,7 @@ macro_rules! aws_sdk_client_provider {
                     let config = aws_sdk_config().into();
                     // The false branch is to force type inference of `config`
                     // to the correct one for the given Client type
+                    // NB: It is virtually guaranteed to *NOT* be included in the final binary
                     if false {
                         <$client>::from_conf(config)
                     } else {
