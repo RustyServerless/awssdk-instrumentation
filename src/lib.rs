@@ -9,6 +9,7 @@ pub mod interceptor;
 pub mod lambda;
 
 pub mod env;
+pub mod utils;
 
 pub mod init;
 
