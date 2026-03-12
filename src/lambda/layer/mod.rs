@@ -124,8 +124,7 @@ where
                     .unwrap_or_default()
             })
             .to_owned();
-        dbg!(&req.context);
-        dbg!(&req.body);
+
         let xray_trace_header = req.context.xray_trace_id.as_ref().and_then(|trace_id| {
             trace_id
                 .parse()
