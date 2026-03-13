@@ -435,6 +435,8 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "pin-project",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -1494,7 +1496,7 @@ dependencies = [
 [[package]]
 name = "opentelemetry-aws"
 version = "0.19.0"
-source = "git+https://github.com/RustyServerless/opentelemetry-rust-contrib?branch=feat%2Faws-xray-exporter-wip#b82cd59d2f3fc4704f2af87c03853e91e2f9b523"
+source = "git+https://github.com/RustyServerless/opentelemetry-rust-contrib?branch=feat%2Faws-xray-exporter-wip#2ceb1695bd420a26560f4b9596ed1d84329093d2"
 dependencies = [
  "opentelemetry",
  "opentelemetry-semantic-conventions",

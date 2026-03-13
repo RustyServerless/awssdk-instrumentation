@@ -27,7 +27,8 @@ impl Instrumentor for TracingInstrumentor {
             { semco::CLOUD_RESOURCE_ID } = context.function_arn,
             { semco::FAAS_INVOCATION_ID } = context.request_id,
             { semco::CLOUD_ACCOUNT_ID } = context.account_id,
-            { semco::FAAS_COLDSTART } = context.is_coldstart
+            { semco::FAAS_COLDSTART } = context.is_coldstart,
+            xray_trace_id = tracing::field::Empty,
         );
 
         if let Some(XRayTraceHeader {
@@ -39,6 +40,7 @@ impl Instrumentor for TracingInstrumentor {
             let otel_context = opentelemetry::Context::new().with_remote_span_context(
                 SpanContext::new(trace_id, parent_id, sampled, true, TraceState::NONE),
             );
+            span.record("xray_trace_id", trace_id.to_string());
             span.set_parent(otel_context).expect("not yet activated");
         }
 

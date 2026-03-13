@@ -1,6 +1,17 @@
 // Interceptor module — AttributeExtractor trait, DefaultExtractor, ServiceFilter,
 // closure registration, and service dispatch logic.
 
+// Semantic convention constants not yet available in the `opentelemetry-semantic-conventions`
+// crate. Named identically to the upstream pattern so the compiler will error once the
+// crate exports them and we can remove these definitions.
+pub const DB_SYSTEM_NAME: &str = "db.system.name";
+pub const RPC_SYSTEM_NAME: &str = "rpc.system.name";
+#[allow(unused)]
+mod _tell_me_when_semconv_have_it {
+    use super::{DB_SYSTEM_NAME, RPC_SYSTEM_NAME};
+    use opentelemetry_semantic_conventions::attribute::*;
+}
+
 pub mod extract;
 mod utils;
 
@@ -310,6 +321,11 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         if let Some(req_id) = RequestId::request_id(response) {
             log::trace!("REQ_ID: {req_id}");
             span.set_attribute(semco::AWS_REQUEST_ID, req_id.to_owned());
+        }
+
+        if let Some(extended_id) = response.headers().get("x-amz-id-2") {
+            log::trace!("EXTENDED_REQ_ID: {extended_id}");
+            span.set_attribute(semco::AWS_EXTENDED_REQUEST_ID, extended_id.to_owned());
         }
 
         call_extractors!(self service operation extract_response response_hooks response span);

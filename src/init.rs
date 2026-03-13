@@ -10,6 +10,12 @@ use tracing_subscriber::{Layer, registry::LookupSpan};
 
 use crate::env::default_resource;
 
+// If exist, expected to contain either:
+// - "all" => meaning all attributbes needs to be indexed(annotation)/put in metadata
+// - a space separated list of attributes key
+const ANNOTATION_ATTRIBUTES_ENV_VAR: &str = "XRAY_ANNOTATIONS";
+const METADATA_ATTRIBUTES_ENV_VAR: &str = "XRAY_METADATA";
+
 #[inline(always)]
 pub fn default_telemetry_init() -> SdkTracerProvider {
     let tracer_provider = default_tracer_provider();
@@ -46,11 +52,40 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
     let builder = {
         use opentelemetry_aws::{
             trace::XrayIdGenerator,
-            xray_exporter::{XrayExporter, daemon_client::XrayDaemonClient},
+            xray_exporter::{SegmentTranslator, XrayExporter, daemon_client::XrayDaemonClient},
         };
+
+        let translator = SegmentTranslator::new();
+        let translator = match std::env::var(ANNOTATION_ATTRIBUTES_ENV_VAR) {
+            Ok(value) => {
+                if value == "all" {
+                    translator.index_all_attrs()
+                } else {
+                    translator.with_indexed_attrs(
+                        value.split(" ").map(|attr_key| attr_key.trim().to_owned()),
+                    )
+                }
+            }
+            Err(_) => translator,
+        };
+        let translator = match std::env::var(METADATA_ATTRIBUTES_ENV_VAR) {
+            Ok(value) => {
+                if value == "all" {
+                    translator.metadata_all_attrs()
+                } else {
+                    translator.with_metadata_attrs(
+                        value.split(" ").map(|attr_key| attr_key.trim().to_owned()),
+                    )
+                }
+            }
+            Err(_) => translator,
+        };
+
         builder
             .with_id_generator(XrayIdGenerator::default())
-            .with_batch_exporter(XrayExporter::new(XrayDaemonClient::default()))
+            .with_batch_exporter(
+                XrayExporter::new(XrayDaemonClient::default()).with_translator(translator),
+            )
     };
 
     builder.build()

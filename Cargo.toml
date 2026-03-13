@@ -36,6 +36,8 @@ pin-project = { version = "1", optional = true }
 
 # Extraction: per-service SDK dependencies
 aws-sdk-dynamodb = { version = "1", optional = true }
+serde = { version = "1", optional = true }
+serde_json = { version = "1", optional = true }
 aws-sdk-s3 = { version = "1", optional = true }
 aws-sdk-sqs = { version = "1", optional = true }
 
@@ -57,7 +59,7 @@ env-eks = []
 env-ec2 = []
 
 # --- Extraction features ---
-extract-dynamodb = ["dep:aws-sdk-dynamodb"]
+extract-dynamodb = ["dep:aws-sdk-dynamodb", "dep:serde", "dep:serde_json"]
 extract-s3 = ["dep:aws-sdk-s3"]
 extract-sqs = ["dep:aws-sdk-sqs"]
 

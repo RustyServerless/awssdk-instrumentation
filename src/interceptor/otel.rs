@@ -75,7 +75,10 @@ impl Intercept for OtelInterceptor {
             SpanBuilder::from_name("Service.Operation place holder")
                 .with_start_time(start_time)
                 .with_kind(SpanKind::Client)
-                .with_attributes(Some(KeyValue::new(semco::RPC_SYSTEM, "aws-api"))),
+                .with_attributes(vec![
+                    KeyValue::new(semco::RPC_SYSTEM, "aws-api"),
+                    KeyValue::new(super::RPC_SYSTEM_NAME, "aws-api"),
+                ]),
         );
 
         self.extractor

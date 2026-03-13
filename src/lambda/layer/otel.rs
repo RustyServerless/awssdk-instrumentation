@@ -88,8 +88,12 @@ impl Instrumentor for OtelInstrumentor {
             let otel_context = opentelemetry::Context::new().with_remote_span_context(
                 SpanContext::new(trace_id, parent_id, sampled, true, TraceState::NONE),
             );
-            let span =
-                tracer.build_with_context(span_builder.with_trace_id(trace_id), &otel_context);
+            let span = tracer.build_with_context(
+                span_builder
+                    .with_trace_id(trace_id)
+                    .with_attributes([KeyValue::new("xray_trace_id", trace_id.to_string())]),
+                &otel_context,
+            );
 
             otel_context.with_span(span)
         } else {
