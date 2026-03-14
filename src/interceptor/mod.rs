@@ -103,6 +103,19 @@ pub trait AttributeExtractor<SW: SpanWrite> {
         _span: &mut SW,
     ) {
     }
+    // Extract attributes from an operation Error after execution.
+    // Called after the module-level error handling has already set `error.type`
+    // and span status from the type-erased Display output. Service extractors
+    // can override or augment those attributes here (e.g. via downcast to the
+    // concrete error type and `ProvideErrorMetadata`).
+    fn extract_error(
+        &self,
+        _service: Service,
+        _operation: Operation,
+        _error: &context::Error,
+        _span: &mut SW,
+    ) {
+    }
 }
 
 // Type alias for registered input extraction closures.
@@ -114,6 +127,8 @@ type ResponseHook<SW> =
     Box<dyn for<'a> Fn(Service<'a>, Operation<'a>, &'a http::Response, &'a mut SW) + Send + Sync>;
 type OutputHook<SW> =
     Box<dyn for<'a> Fn(Service<'a>, Operation<'a>, &'a context::Output, &'a mut SW) + Send + Sync>;
+type ErrorHook<SW> =
+    Box<dyn for<'a> Fn(Service<'a>, Operation<'a>, &'a context::Error, &'a mut SW) + Send + Sync>;
 
 // The built-in extractor that dispatches by service/operation and supports user extensions.
 pub struct DefaultExtractor<SW: SpanWrite> {
@@ -131,6 +146,7 @@ pub struct DefaultExtractor<SW: SpanWrite> {
     request_hooks: Vec<(ServiceFilter, RequestHook<SW>)>,
     response_hooks: Vec<(ServiceFilter, ResponseHook<SW>)>,
     output_hooks: Vec<(ServiceFilter, OutputHook<SW>)>,
+    error_hooks: Vec<(ServiceFilter, ErrorHook<SW>)>,
 }
 impl<SW: SpanWrite> core::fmt::Debug for DefaultExtractor<SW> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -153,6 +169,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
             request_hooks: Vec::new(),
             response_hooks: Vec::new(),
             output_hooks: Vec::new(),
+            error_hooks: Vec::new(),
         }
     }
 
@@ -190,6 +207,17 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         H: Send + Sync + 'static,
     {
         self.output_hooks.push((filter, Box::new(hook)));
+    }
+
+    // Register a closure for error extraction, scoped by a ServiceFilter.
+    // Called after the module-level error handling has already set `error.type`
+    // and span status.
+    pub fn register_error_hook<H>(&mut self, filter: ServiceFilter, hook: H)
+    where
+        H: for<'a> Fn(Service<'a>, Operation<'a>, &'a context::Error, &'a mut SW),
+        H: Send + Sync + 'static,
+    {
+        self.error_hooks.push((filter, Box::new(hook)));
     }
 
     // Register a trait-based extractor for structured extraction logic.
@@ -318,6 +346,11 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
 
         log::trace!("RESPONSE: {:?}", response);
 
+        span.set_attribute(
+            semco::HTTP_RESPONSE_STATUS_CODE,
+            response.status().as_u16() as i64,
+        );
+
         if let Some(req_id) = RequestId::request_id(response) {
             log::trace!("REQ_ID: {req_id}");
             span.set_attribute(semco::AWS_REQUEST_ID, req_id.to_owned());
@@ -342,25 +375,80 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
 
         let (service, operation) = extract_service_operation(cfg);
 
-        let ouput_or_error = context.output_or_error();
+        let output_or_error = context.output_or_error();
 
-        log::trace!("OUTPUT_OR_ERROR: {:?}", ouput_or_error);
+        log::trace!("OUTPUT_OR_ERROR: {:?}", output_or_error);
 
-        match ouput_or_error {
+        match output_or_error {
             Some(Ok(output)) => {
                 call_extractors!(self service operation extract_output output_hooks output span);
             }
             Some(Err(orchestration_error)) => {
                 if let Some(op_error) = orchestration_error.as_operation_error() {
-                    log::debug!("{op_error:?}");
-                } else if let Some(con_error) = orchestration_error.as_connector_error() {
-                    log::debug!("{con_error:?}");
+                    // Operation error — the service returned a modeled error.
+                    //
+                    // We cannot access `ProvideErrorMetadata` here because the
+                    // SDK's type-erasure (`TypeErasedError`) only preserves the
+                    // `std::error::Error` vtable, not `ProvideErrorMetadata`.
+                    // Downcasting would require knowing the concrete per-operation
+                    // error enum at compile time (that's what `extract_error` on
+                    // service extractors is for).
+                    //
+                    // Instead we parse the Display output. Every codegen'd SDK
+                    // operation error produces "ErrorCode: human message" or just
+                    // "ErrorCode" (no message). This format is emitted by the
+                    // `Display` impl generated in each operation module (e.g.
+                    // `aws-sdk-dynamodb/src/operation/put_item.rs`). The inner
+                    // variant types follow the same pattern — see for example
+                    // `aws-sdk-dynamodb/src/types/error/_conditional_check_failed_exception.rs`.
+                    //
+                    // If this parsing ever breaks, check the generated Display
+                    // impl in the SDK crate for the service in question — look
+                    // for `impl ::std::fmt::Display for <Operation>Error` in
+                    // `src/operation/<snake_op>/builders.rs` (or the parent
+                    // `src/operation/<snake_op>.rs` depending on SDK version).
+                    let display = format!("{op_error}");
+                    let (error_type, message) = match display.split_once(": ") {
+                        Some((code, msg)) => (code, msg),
+                        None => (display.as_str(), display.as_str()),
+                    };
+                    log::debug!("operation error: {display}");
+
+                    span.set_attribute(semco::ERROR_TYPE, error_type.to_owned());
+                    span.set_status(Status::error(message.to_owned()));
+
+                    // Let service extractors and user hooks refine error attributes.
+                    let error = op_error;
+                    call_extractors!(self service operation extract_error error_hooks error span);
+                } else if let Some(connector_error) = orchestration_error.as_connector_error() {
+                    // Connector error — network or dispatch failure.
+                    let message = format!("{connector_error}");
+                    log::debug!("connector error: {message}");
+
+                    span.set_attribute(semco::ERROR_TYPE, "CONNECTOR".to_owned());
+                    span.set_status(Status::error(message));
+                } else if orchestration_error.is_timeout_error() {
+                    let message = format!("{orchestration_error}");
+                    log::debug!("timeout error: {message}");
+
+                    span.set_attribute(semco::ERROR_TYPE, "TIMEOUT".to_owned());
+                    span.set_status(Status::error(message));
                 } else {
-                    log::debug!("{orchestration_error:?}");
+                    // Interceptor, response, or other errors.
+                    let message = format!("{orchestration_error}");
+                    log::debug!("orchestration error: {message}");
+
+                    span.set_attribute(semco::ERROR_TYPE, "_OTHER".to_owned());
+                    span.set_status(Status::error(message));
                 }
             }
             None => {
-                log::debug!("No output received");
+                // No output or error — the SDK failed before producing either.
+                log::debug!("no output or error received");
+                span.set_attribute(semco::ERROR_TYPE, "_OTHER".to_owned());
+                span.set_status(Status::error(
+                    "SDK completed without output or error".to_owned(),
+                ));
             }
         }
 
