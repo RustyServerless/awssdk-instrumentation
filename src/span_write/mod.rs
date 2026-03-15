@@ -4,7 +4,7 @@ mod tracing;
 #[cfg(feature = "otel-backend")]
 mod otel;
 
-use opentelemetry::{Value, trace::Status};
+pub use opentelemetry::{Value, trace::Status};
 
 // Backend-agnostic interface for injecting attributes and status into a span.
 pub trait SpanWrite {
