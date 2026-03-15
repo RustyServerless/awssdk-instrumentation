@@ -123,4 +123,13 @@ impl Instrumentor for OtelInstrumentor {
             f(&mut ctx);
         });
     }
+
+    fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let invocation_ctx = INVOCATION_CTX.with(|ctx| ctx.clone());
+        tokio::spawn(INVOCATION_CTX.scope(invocation_ctx, future))
+    }
 }

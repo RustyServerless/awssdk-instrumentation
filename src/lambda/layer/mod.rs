@@ -2,6 +2,7 @@ mod utils;
 
 #[cfg(feature = "tracing-backend")]
 mod tracing;
+use tokio::task::JoinHandle;
 #[cfg(feature = "tracing-backend")]
 pub use tracing::TracingInstrumentor;
 
@@ -41,6 +42,10 @@ pub trait Instrumentor {
     type InvocationSpan: SpanWrite;
     fn instrument<Fut: Future>(inner: Fut, context: InvocationContext) -> Self::IFut<Fut>;
     fn with_invocation_span(f: impl FnOnce(&mut Self::InvocationSpan));
+    fn spawn<F>(future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static;
 }
 
 pub trait InstrumentedFuture: Future {

@@ -66,4 +66,13 @@ impl Instrumentor for TracingInstrumentor {
             f(&mut span);
         });
     }
+
+    fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let span = INVOCATION_SPAN.with(|span| span.clone());
+        tokio::spawn(INVOCATION_SPAN.scope(span, future))
+    }
 }
