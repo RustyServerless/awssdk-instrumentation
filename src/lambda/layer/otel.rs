@@ -9,6 +9,7 @@ use opentelemetry::{
 use opentelemetry_semantic_conventions::attribute as semco;
 
 use pin_project::{pin_project, pinned_drop};
+use tokio::task::futures::TaskLocalFuture;
 
 use super::{InstrumentedFuture, Instrumentor, utils::XRayTraceHeader};
 
@@ -57,8 +58,12 @@ impl<Fut: Future> InstrumentedFuture for OtelInstrumentedFuture<Fut> {
     type Fut = Self;
 }
 
+tokio::task_local! {
+    static INVOCATION_CTX: Context;
+}
 impl Instrumentor for OtelInstrumentor {
-    type IFut<F: Future> = OtelInstrumentedFuture<F>;
+    type IFut<F: Future> = OtelInstrumentedFuture<TaskLocalFuture<Context, F>>;
+    type InvocationSpan = Context;
 
     fn instrument<F: Future>(inner: F, context: super::InvocationContext) -> Self::IFut<F> {
         let tracer = opentelemetry::global::tracer("");
@@ -100,9 +105,22 @@ impl Instrumentor for OtelInstrumentor {
             let span = tracer.build(span_builder);
             opentelemetry::Context::current().with_span(span)
         };
+
+        // Scope the task-local so with_invocation_span can find it
+        let inner = INVOCATION_CTX.scope(ctx.clone(), inner);
+
         OtelInstrumentedFuture {
             future: ManuallyDrop::new(inner),
             ctx,
         }
+    }
+
+    fn with_invocation_span(f: impl FnOnce(&mut Self::InvocationSpan)) {
+        INVOCATION_CTX.with(|ctx| {
+            // ctx is the *invocation* Context, regardless of what
+            // Context::current() points to right now
+            let mut ctx = ctx.clone();
+            f(&mut ctx);
+        });
     }
 }

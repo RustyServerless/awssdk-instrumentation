@@ -19,6 +19,9 @@ use lambda_runtime::{
 use pin_project::{pin_project, pinned_drop};
 pub use utils::OTelFaasTrigger;
 use utils::XRayTraceHeader;
+
+use crate::span_write::SpanWrite;
+
 // Tower Layer for Lambda invocations — creates a span per invocation,
 // extracts _X_AMZN_TRACE_ID, sets invocation attributes, flushes exporter.
 
@@ -35,7 +38,9 @@ pub struct InvocationContext {
 /// Trait for futures that are aware of instrumentation spans
 pub trait Instrumentor {
     type IFut<F: Future>: InstrumentedFuture<Fut: Future<Output = F::Output>>;
+    type InvocationSpan: SpanWrite;
     fn instrument<Fut: Future>(inner: Fut, context: InvocationContext) -> Self::IFut<Fut>;
+    fn with_invocation_span(f: impl FnOnce(&mut Self::InvocationSpan));
 }
 
 pub trait InstrumentedFuture: Future {

@@ -3,8 +3,9 @@
 use opentelemetry::trace::{SpanContext, TraceContextExt, TraceState};
 use opentelemetry_semantic_conventions::attribute as semco;
 
-use tracing::Instrument;
+use tokio::task::futures::TaskLocalFuture;
 use tracing::instrument::Instrumented;
+use tracing::{Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::{InstrumentedFuture, Instrumentor, utils::XRayTraceHeader};
@@ -16,8 +17,13 @@ impl<Fut: Future> InstrumentedFuture for Instrumented<Fut> {
     type Fut = Self;
 }
 
+tokio::task_local! {
+    static INVOCATION_SPAN: Span;
+}
+
 impl Instrumentor for TracingInstrumentor {
-    type IFut<F: Future> = Instrumented<F>;
+    type IFut<F: Future> = Instrumented<TaskLocalFuture<Span, F>>;
+    type InvocationSpan = Span;
 
     fn instrument<F: Future>(inner: F, context: super::InvocationContext) -> Self::IFut<F> {
         let span = tracing::info_span!(
@@ -44,10 +50,20 @@ impl Instrumentor for TracingInstrumentor {
             span.set_parent(otel_context).expect("not yet activated");
         }
 
+        // Scope the task-local so with_invocation_span can find it
+        let inner = INVOCATION_SPAN.scope(span.clone(), inner);
+
         {
             let _guard = span.enter();
             inner
         }
         .instrument(span)
+    }
+
+    fn with_invocation_span(f: impl FnOnce(&mut Self::InvocationSpan)) {
+        INVOCATION_SPAN.with(|span| {
+            let mut span = span.clone();
+            f(&mut span);
+        });
     }
 }

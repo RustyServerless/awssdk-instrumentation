@@ -11,6 +11,11 @@ pub fn lambda_resource() -> Resource {
         .with_attributes(
             [
                 Some(KeyValue::new(semco::CLOUD_PROVIDER, "aws")),
+                // This cause X-Ray to display the Handler node with a Lambda icon
+                // Even if the trace graph correctly displays 2 separate nodes with the
+                // same icon (the segment coming from the service itself, and the segment
+                // of the handler) the waterfall merges them.
+                // TODO: Wonder if it as actually desirable. The Python auto-instrumentation do not do that for example.
                 Some(KeyValue::new(semco::CLOUD_PLATFORM, "aws_lambda")),
                 Some(KeyValue::new(
                     "telemetry.auto.version",

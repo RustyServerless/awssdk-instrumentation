@@ -18,26 +18,16 @@ use aws_smithy_runtime_api::{
 use aws_smithy_types::config_bag::ConfigBag;
 
 use opentelemetry::{
-    KeyValue, Value,
+    KeyValue,
     global::BoxedSpan,
-    trace::{Span as SpanTrait, SpanBuilder, SpanKind, Status, Tracer},
+    trace::{Span as SpanTrait, SpanBuilder, SpanKind, Tracer},
 };
 use opentelemetry_semantic_conventions::attribute as semco;
 
 use super::{
-    DefaultExtractor, SpanWrite,
+    DefaultExtractor,
     utils::{StorableOption, extract_service_operation},
 };
-
-impl SpanWrite for BoxedSpan {
-    fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
-        SpanTrait::set_attribute(self, KeyValue::new(key, value));
-    }
-
-    fn set_status(&mut self, code: Status) {
-        SpanTrait::set_status(self, code);
-    }
-}
 
 // Intercept implementation using the OTel-native backend.
 #[derive(Debug)]

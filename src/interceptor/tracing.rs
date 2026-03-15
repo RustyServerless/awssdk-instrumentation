@@ -17,24 +17,12 @@ use aws_smithy_runtime_api::{
 };
 use aws_smithy_types::config_bag::ConfigBag;
 
-use opentelemetry::{Value, trace::Status};
 use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::{
-    DefaultExtractor, SpanWrite,
+    DefaultExtractor,
     utils::{SpanPauser, StorableOption},
 };
-
-impl SpanWrite for Span {
-    fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
-        OpenTelemetrySpanExt::set_attribute(self, key, value);
-    }
-
-    fn set_status(&mut self, status: Status) {
-        OpenTelemetrySpanExt::set_status(self, status);
-    }
-}
 
 // Intercept implementation using the tracing backend.
 #[derive(Debug)]
@@ -72,6 +60,7 @@ impl Intercept for TracingInterceptor {
                 .map(|metadata| metadata.target().contains("::operation::"))
                 .unwrap_or_default()
         }) {
+            span.record("otel.kind", "client");
             self.extractor
                 .read_before_execution(context, cfg, &mut span)?;
 

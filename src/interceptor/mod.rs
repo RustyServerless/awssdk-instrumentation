@@ -31,16 +31,12 @@ use aws_smithy_runtime_api::{box_error::BoxError, client::interceptors::context,
 use aws_smithy_types::config_bag::ConfigBag;
 use aws_types::{region::Region, request_id::RequestId};
 
-use opentelemetry::{Value, trace::Status};
+use opentelemetry::trace::Status;
 use opentelemetry_semantic_conventions::attribute as semco;
 
 use utils::{AwsSdkOperation, SpanPauser, extract_service_operation};
 
-// Backend-agnostic interface for injecting attributes and status into a span.
-pub trait SpanWrite {
-    fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>);
-    fn set_status(&mut self, code: Status);
-}
+use crate::span_write::SpanWrite;
 
 pub type Service<'a> = &'a str;
 pub type Operation<'a> = &'a str;

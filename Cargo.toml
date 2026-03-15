@@ -33,6 +33,7 @@ tracing-opentelemetry = { version = "0.32", default-features = false, optional =
 # Environment: Lambda
 lambda_runtime = { version = "1", optional = true }
 pin-project = { version = "1", optional = true }
+tokio = { version = "1", optional = true }
 
 # Extraction: per-service SDK dependencies
 aws-sdk-dynamodb = { version = "1", optional = true }
@@ -53,7 +54,7 @@ tracing-backend = ["dep:tracing-opentelemetry", "dep:tracing-subscriber"]
 otel-backend = []
 
 # --- Environment features ---
-env-lambda = ["dep:lambda_runtime", "dep:pin-project"]
+env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio"]
 env-ecs = []
 env-eks = []
 env-ec2 = []
