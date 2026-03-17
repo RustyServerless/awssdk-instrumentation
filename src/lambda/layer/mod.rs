@@ -29,7 +29,6 @@ use crate::span_write::SpanWrite;
 
 #[derive(Debug)]
 pub struct InvocationContext {
-    handler_span_kind: SpanKind,
     xray_trace_header: Option<XRayTraceHeader>,
     function_arn: String,
     account_id: String,
@@ -66,7 +65,6 @@ pub type DefaultTracingLayer<F> = TracingLayer<F, DefaultInstrumentor>;
 pub struct TracingLayer<F: Fn() + Clone, I: Instrumentor> {
     flush_fn: F,
     trigger: OTelFaasTrigger,
-    handler_span_kind: SpanKind,
     _phantom: PhantomData<I>,
 }
 
@@ -76,19 +74,12 @@ impl<F: Fn() + Clone, I: Instrumentor> TracingLayer<F, I> {
         Self {
             flush_fn,
             trigger: OTelFaasTrigger::default(),
-            handler_span_kind: SpanKind::Server,
             _phantom: PhantomData,
         }
     }
     /// Configure the `faas.trigger` attribute of the OpenTelemetry span.
     pub fn with_trigger(self, trigger: OTelFaasTrigger) -> Self {
         Self { trigger, ..self }
-    }
-    pub fn with_handler_span_kind(self, handler_span_kind: SpanKind) -> Self {
-        Self {
-            handler_span_kind,
-            ..self
-        }
     }
 }
 
@@ -102,7 +93,6 @@ impl<S, F: Fn() + Clone, I: Instrumentor> Layer<S> for TracingLayer<F, I> {
             coldstart: true,
             trigger: self.trigger,
             account_id: None,
-            handler_span_kind: self.handler_span_kind.clone(),
             _phantom: PhantomData,
         }
     }
@@ -115,7 +105,6 @@ pub struct TracingService<I: Instrumentor, S, F> {
     coldstart: bool,
     trigger: OTelFaasTrigger,
     account_id: Option<String>,
-    handler_span_kind: SpanKind,
     _phantom: PhantomData<I>,
 }
 impl<I, S, F: Fn() + Clone> Service<LambdaInvocation> for TracingService<I, S, F>
@@ -155,7 +144,6 @@ where
         });
 
         let invocation_context = InvocationContext {
-            handler_span_kind: self.handler_span_kind.clone(),
             xray_trace_header,
             function_arn: req.context.invoked_function_arn.to_owned(),
             account_id,

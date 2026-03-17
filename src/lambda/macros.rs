@@ -24,30 +24,27 @@ macro_rules! make_lambda_runtime {
         $handler:path,
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind ;);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ;);
     };
     (
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr
         $(, $name:ident() -> $client:ty)+
     ) => {
         $crate::aws_sdk_config_provider!();
         $(
             $crate::aws_sdk_client_provider!($name() -> $client);
         )+
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind ; with_code sdk_config_init().await;);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; with_code sdk_config_init().await;);
     };
     (
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr ;
         $(with_code $($code:tt)+)?
     ) => {
 
@@ -67,142 +64,45 @@ macro_rules! make_lambda_runtime {
                 .layer(
                     <$crate::lambda::layer::DefaultTracingLayer<_>>::new(move || {$crate::lambda::macros::default_flush_tracer(&tracer_provider);})
                     .with_trigger($trigger)
-                    .with_handler_span_kind($handler_span_kind)
                 )
                 .run()
                 .await
         }
     };
-    // All 3 optional args present, 6 combinations
+    // tracer_provider and trigger, 2 combinations
     (
         $handler:path,
-        telemetry_init = $telemetry_init:ident,
         trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr
+        telemetry_init = $telemetry_init:path
         $(, $name:ident() -> $client:ty)*
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger $(,$name() -> $client)*);
     };
     (
         $handler:path,
-        telemetry_init = $telemetry_init:ident,
-        handler_span_kind = $handler_span_kind:expr,
+        telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger $(,$name() -> $client)*);
     };
-    (
-        $handler:path,
-        handler_span_kind = $handler_span_kind:expr,
-        telemetry_init = $telemetry_init:ident,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        handler_span_kind = $handler_span_kind:expr,
-        trigger = $trigger:expr,
-        telemetry_init = $telemetry_init:ident
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        trigger = $trigger:expr,
-        telemetry_init = $telemetry_init:ident,
-        handler_span_kind = $handler_span_kind:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr,
-        telemetry_init = $telemetry_init:ident
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    // Only runtime_layer and trigger, 2 combinations
-    (
-        $handler:path,
-        trigger = $trigger:expr,
-        handler_span_kind = $handler_span_kind:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        handler_span_kind = $handler_span_kind:expr,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    // Only runtime_layer and tracer_provider, 2 combinations
-    (
-        $handler:path,
-        handler_span_kind = $handler_span_kind:expr,
-        telemetry_init = $telemetry_init:ident
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        telemetry_init = $telemetry_init:ident,
-        handler_span_kind = $handler_span_kind:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
-    };
-    // Only tracer_provider and trigger, 2 combinations
-    (
-        $handler:path,
-        trigger = $trigger:expr,
-        telemetry_init = $telemetry_init:ident
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $crate::lambda::layer::SpanKind::Server $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        telemetry_init = $telemetry_init:ident,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger, handler_span_kind = $crate::lambda::layer::SpanKind::Server $(,$name() -> $client)*);
-    };
-    // Only one optional parameter, 3 combinations
+    // Only one optional parameter, 2 possibilities
     (
         $handler:path,
         trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)*
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger, handler_span_kind = $crate::lambda::layer::SpanKind::Server $(,$name() -> $client)*);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger $(,$name() -> $client)*);
     };
     (
         $handler:path,
-        telemetry_init = $telemetry_init:ident
+        telemetry_init = $telemetry_init:path
         $(, $name:ident() -> $client:ty)*
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, handler_span_kind = $crate::lambda::layer::SpanKind::Server $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        handler_span_kind = $handler_span_kind:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, handler_span_kind = $handler_span_kind $(,$name() -> $client)*);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http $(,$name() -> $client)*);
     };
     // No optional parameter
     ($handler:path $(, $name:ident() -> $client:ty)*) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http, handler_span_kind = $crate::lambda::layer::SpanKind::Server $(,$name() -> $client)*);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http $(,$name() -> $client)*);
     };
 }

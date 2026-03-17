@@ -1,6 +1,6 @@
 // Tracing backend
 
-use opentelemetry::trace::{SpanContext, SpanKind, TraceContextExt, TraceState};
+use opentelemetry::trace::{SpanContext, TraceContextExt, TraceState};
 use opentelemetry_semantic_conventions::attribute as semco;
 
 use tokio::task::futures::TaskLocalFuture;
@@ -28,13 +28,7 @@ impl Instrumentor for TracingInstrumentor {
     fn instrument<F: Future>(inner: F, context: super::InvocationContext) -> Self::IFut<F> {
         let span = tracing::info_span!(
             "Lambda runtime invoke",
-            otel.kind = match context.handler_span_kind {
-                SpanKind::Client => "client",
-                SpanKind::Server => "server",
-                SpanKind::Producer => "producer",
-                SpanKind::Consumer => "consumer",
-                SpanKind::Internal => "internal",
-            },
+            otel.kind = "server",
             { semco::FAAS_TRIGGER } = context.trigger.to_string(),
             { semco::CLOUD_RESOURCE_ID } = context.function_arn,
             { semco::FAAS_INVOCATION_ID } = context.request_id,
