@@ -16,7 +16,7 @@ pub mod ec2;
 
 #[cfg(feature = "env-lambda")]
 pub fn default_resource() -> Resource {
-    lambda::lambda_resource()
+    lambda::lambda_resource(false)
 }
 
 #[cfg(all(feature = "env-ecs", not(feature = "env-lambda")))]

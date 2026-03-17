@@ -6,17 +6,18 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_semantic_conventions::attribute as semco;
 use std::env;
 
-pub fn lambda_resource() -> Resource {
+pub fn lambda_resource(xray_display_handler_as_lambda: bool) -> Resource {
     Resource::builder()
         .with_attributes(
             [
                 Some(KeyValue::new(semco::CLOUD_PROVIDER, "aws")),
-                // This cause X-Ray to display the Handler node with a Lambda icon
-                // Even if the trace graph correctly displays 2 separate nodes with the
-                // same icon (the segment coming from the service itself, and the segment
-                // of the handler) the waterfall merges them.
-                // TODO: Wonder if it as actually desirable. The Python auto-instrumentation do not do that for example.
-                Some(KeyValue::new(semco::CLOUD_PLATFORM, "aws_lambda")),
+                // This would cause X-Ray to display the Handler node with a Lambda icon
+                // The trace graph displays 2 separate nodes with the same icon (the segment coming
+                // from the service itself, and the segment of the handler) but the waterfall merges them.
+                // I wonder if it as actually desirable.
+                // The Python ADOT auto-instrumentation do not do that, for example.
+                xray_display_handler_as_lambda
+                    .then_some(KeyValue::new(semco::CLOUD_PLATFORM, "aws_lambda")),
                 Some(KeyValue::new(
                     "telemetry.auto.version",
                     concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION")),

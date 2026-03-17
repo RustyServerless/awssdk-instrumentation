@@ -4,7 +4,7 @@ use std::{env, mem::ManuallyDrop, pin::Pin, task};
 
 use opentelemetry::{
     Context, KeyValue,
-    trace::{SpanBuilder, SpanContext, SpanKind, TraceContextExt, TraceState, Tracer},
+    trace::{SpanBuilder, SpanContext, TraceContextExt, TraceState, Tracer},
 };
 use opentelemetry_semantic_conventions::attribute as semco;
 
@@ -73,7 +73,7 @@ impl Instrumentor for OtelInstrumentor {
                 .ok()
                 .unwrap_or_default(),
         )
-        .with_kind(SpanKind::Server)
+        .with_kind(context.handler_span_kind)
         .with_attributes([
             KeyValue::new(semco::FAAS_TRIGGER, context.trigger.to_string()),
             KeyValue::new(semco::CLOUD_RESOURCE_ID, context.function_arn),
