@@ -23,7 +23,7 @@ macro_rules! make_lambda_runtime {
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr,
+        trigger = $trigger:expr
     ) => {
         $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ;);
     };
@@ -31,7 +31,7 @@ macro_rules! make_lambda_runtime {
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr,
+        trigger = $trigger:expr
         $(, $name:ident() -> $client:ty)+
     ) => {
         $crate::aws_sdk_config_provider!();
@@ -44,7 +44,7 @@ macro_rules! make_lambda_runtime {
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr,
+        trigger = $trigger:expr ;
         $(with_code $($code:tt)+)?
     ) => {
 
