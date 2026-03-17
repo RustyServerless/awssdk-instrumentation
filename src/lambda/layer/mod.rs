@@ -2,8 +2,6 @@ mod utils;
 
 #[cfg(feature = "tracing-backend")]
 mod tracing;
-use opentelemetry::trace::SpanKind;
-use tokio::task::JoinHandle;
 #[cfg(feature = "tracing-backend")]
 pub use tracing::TracingInstrumentor;
 
@@ -12,7 +10,9 @@ mod otel;
 #[cfg(feature = "otel-backend")]
 pub use otel::OtelInstrumentor;
 
+pub use opentelemetry::trace::SpanKind;
 use std::{marker::PhantomData, mem::ManuallyDrop, pin::Pin, task};
+use tokio::task::JoinHandle;
 
 use lambda_runtime::{
     LambdaInvocation, Service,
