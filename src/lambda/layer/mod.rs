@@ -11,6 +11,8 @@ mod otel;
 pub use otel::OtelInstrumentor;
 
 pub use opentelemetry::trace::SpanKind;
+pub use utils::OTelFaasTrigger;
+
 use std::{marker::PhantomData, mem::ManuallyDrop, pin::Pin, task};
 use tokio::task::JoinHandle;
 
@@ -19,7 +21,7 @@ use lambda_runtime::{
     tower::{BoxError, Layer},
 };
 use pin_project::{pin_project, pinned_drop};
-pub use utils::OTelFaasTrigger;
+
 use utils::XRayTraceHeader;
 
 use crate::span_write::SpanWrite;
