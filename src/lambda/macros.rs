@@ -1,8 +1,6 @@
 // make_lambda_runtime! macro — generates main(), tracer init, instrumented
 // SDK clients, Tower layer setup, and Lambda runtime execution.
 
-pub use lambda_runtime;
-pub use opentelemetry_sdk;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
 #[inline(always)]
@@ -49,10 +47,10 @@ macro_rules! make_lambda_runtime {
     ) => {
 
         #[tokio::main]
-        async fn main() -> Result<(), $crate::lambda::macros::lambda_runtime::Error> {
+        async fn main() -> Result<(), $crate::lambda::lambda_runtime::Error> {
 
             const _: fn() = || {
-                fn _test_telemetry_init(_f: fn() -> $crate::lambda::macros::opentelemetry_sdk::trace::SdkTracerProvider) {}
+                fn _test_telemetry_init(_f: fn() -> $crate::lambda::opentelemetry_sdk::trace::SdkTracerProvider) {}
                 _test_telemetry_init($telemetry_init)
             };
             let tracer_provider = $telemetry_init();
@@ -60,7 +58,7 @@ macro_rules! make_lambda_runtime {
             $($($code)+)?
 
 
-            $crate::lambda::macros::lambda_runtime::Runtime::new($crate::lambda::macros::lambda_runtime::service_fn($handler))
+            $crate::lambda::lambda_runtime::Runtime::new($crate::lambda::lambda_runtime::service_fn($handler))
                 .layer(
                     <$crate::lambda::layer::DefaultTracingLayer<_>>::new(move || {$crate::lambda::macros::default_flush_tracer(&tracer_provider);})
                     .with_trigger($trigger)
