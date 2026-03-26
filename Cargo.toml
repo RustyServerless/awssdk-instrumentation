@@ -43,8 +43,8 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-sdk-sqs = { version = "1", optional = true }
 
 # Export: X-Ray
-opentelemetry-aws = { version = "0.19", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
-
+# Pending merge of PR #549 https://github.com/open-telemetry/opentelemetry-rust-contrib/pull/549
+opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip", version = "0.19", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
 
 [features]
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
@@ -66,6 +66,3 @@ extract-sqs = ["dep:aws-sdk-sqs"]
 
 # --- Export features ---
 export-xray = ["dep:opentelemetry-aws"]
-
-[patch.crates-io]
-opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }
