@@ -35,6 +35,9 @@ lambda_runtime = { version = "1", optional = true }
 pin-project = { version = "1", optional = true }
 tokio = { version = "1", optional = true }
 
+# Environment: ECS/EKS/EC2
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"], optional = true }
+
 # Extraction: per-service SDK dependencies
 aws-sdk-dynamodb = { version = "1", optional = true }
 serde = { version = "1", optional = true }
@@ -44,7 +47,7 @@ aws-sdk-sqs = { version = "1", optional = true }
 
 # Export: X-Ray
 # Pending merge of PR #549 https://github.com/open-telemetry/opentelemetry-rust-contrib/pull/549
-opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter", version = "0.19", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
+opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", rev = "50ad500e7d419e17c7f88c188baf2ebfafce3817", version = "0.19", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
 
 [features]
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
@@ -55,9 +58,9 @@ otel-backend = []
 
 # --- Environment features ---
 env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio"]
-env-ecs = []
-env-eks = []
-env-ec2 = []
+env-ecs = ["dep:reqwest"]
+env-eks = ["dep:reqwest"]
+env-ec2 = ["dep:reqwest"]
 
 # --- Extraction features ---
 extract-dynamodb = ["dep:aws-sdk-dynamodb", "dep:serde", "dep:serde_json"]

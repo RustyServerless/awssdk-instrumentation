@@ -1,6 +1,8 @@
 // Environment resource detection — common types and feature-gated detectors.
 
+use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
+use opentelemetry_semantic_conventions::attribute as semco;
 
 #[cfg(feature = "env-lambda")]
 pub mod lambda;
@@ -14,44 +16,29 @@ pub mod eks;
 #[cfg(feature = "env-ec2")]
 pub mod ec2;
 
-#[cfg(feature = "env-lambda")]
 pub fn default_resource() -> Resource {
-    lambda::lambda_resource(false)
-}
+    #[cfg(feature = "env-lambda")]
+    if let Some(resource) = lambda::lambda_resource(false) {
+        return resource;
+    }
 
-#[cfg(all(feature = "env-ecs", not(feature = "env-lambda")))]
-pub fn default_resource() -> Resource {
-    ecs::ecs_resource()
-}
+    #[cfg(feature = "env-ecs")]
+    if let Some(resource) = ecs::ecs_resource() {
+        return resource;
+    }
 
-#[cfg(all(
-    feature = "env-eks",
-    not(any(feature = "env-lambda", feature = "env-ecs"))
-))]
-pub fn default_resource() -> Resource {
-    eks::eks_resource()
-}
+    #[cfg(feature = "env-eks")]
+    if let Some(resource) = eks::eks_resource() {
+        return resource;
+    }
 
-#[cfg(all(
-    feature = "env-ec2",
-    not(any(feature = "env-lambda", feature = "env-ecs", feature = "env-eks"))
-))]
-pub fn default_resource() -> Resource {
-    ec2::ec2_resource()
-}
+    #[cfg(feature = "env-ec2")]
+    if let Some(resource) = ec2::ec2_resource() {
+        return resource;
+    }
 
-#[cfg(not(any(
-    feature = "env-lambda",
-    feature = "env-ecs",
-    feature = "env-eks",
-    feature = "env-ec2"
-)))]
-pub fn default_resource() -> Resource {
+    // Fallback: no env feature enabled or detection failed
     Resource::builder()
-        .with_attributes(
-            [Some(KeyValue::new(semco::CLOUD_PROVIDER, "aws"))]
-                .into_iter()
-                .flatten(),
-        )
+        .with_attributes([KeyValue::new(semco::CLOUD_PROVIDER, "aws")])
         .build()
 }

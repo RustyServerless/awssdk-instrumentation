@@ -12,10 +12,10 @@ use aws_sdk_sqs::operation::{
     list_dead_letter_source_queues::ListDeadLetterSourceQueuesInput,
     list_queue_tags::ListQueueTagsInput,
     purge_queue::PurgeQueueInput,
-    receive_message::ReceiveMessageInput,
+    receive_message::{ReceiveMessageInput, ReceiveMessageOutput},
     remove_permission::RemovePermissionInput,
     send_message::{SendMessageInput, SendMessageOutput},
-    send_message_batch::SendMessageBatchInput,
+    send_message_batch::{SendMessageBatchInput, SendMessageBatchOutput},
     set_queue_attributes::SetQueueAttributesInput,
     tag_queue::TagQueueInput,
     untag_queue::UntagQueueInput,
@@ -193,15 +193,29 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for SQSExtractor {
         output: &context::Output,
         span: &mut SW,
     ) {
-        // Extract messaging.message.id from SendMessage response
-        if operation == "SendMessage" {
-            if let Some(message_id) = output
-                .downcast_ref::<SendMessageOutput>()
-                .expect("correct type")
-                .message_id()
-            {
-                span.set_attribute(semco::MESSAGING_MESSAGE_ID, message_id.to_owned());
+        match operation {
+            "SendMessage" => {
+                if let Some(message_id) = output
+                    .downcast_ref::<SendMessageOutput>()
+                    .expect("correct type")
+                    .message_id()
+                {
+                    span.set_attribute(semco::MESSAGING_MESSAGE_ID, message_id.to_owned());
+                }
             }
+            "SendMessageBatch" => {
+                if let Some(output) = output.downcast_ref::<SendMessageBatchOutput>() {
+                    let count = output.successful().len();
+                    span.set_attribute(semco::MESSAGING_BATCH_MESSAGE_COUNT, count as i64);
+                }
+            }
+            "ReceiveMessage" => {
+                if let Some(output) = output.downcast_ref::<ReceiveMessageOutput>() {
+                    let count = output.messages().len();
+                    span.set_attribute(semco::MESSAGING_BATCH_MESSAGE_COUNT, count as i64);
+                }
+            }
+            _ => {}
         }
     }
 }

@@ -34,7 +34,7 @@ use aws_types::{region::Region, request_id::RequestId};
 use opentelemetry::trace::Status;
 use opentelemetry_semantic_conventions::attribute as semco;
 
-use utils::{AwsSdkOperation, SpanPauser, extract_service_operation};
+use utils::{AwsSdkOperation, extract_service_operation};
 
 use crate::span_write::SpanWrite;
 
@@ -54,9 +54,10 @@ impl ServiceFilter {
     fn is_match(&self, service: Service, operation: Operation) -> bool {
         match self {
             ServiceFilter::All => true,
-            ServiceFilter::Service(s) if *s == service => true,
-            ServiceFilter::Operation(s, o) if *s == service && *o == operation => true,
-            _ => false,
+            ServiceFilter::Service(s) => s.eq_ignore_ascii_case(service),
+            ServiceFilter::Operation(s, o) => {
+                s.eq_ignore_ascii_case(service) && o.eq_ignore_ascii_case(operation)
+            }
         }
     }
 }
@@ -178,7 +179,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         self.input_hooks.push((filter, Box::new(hook)));
     }
 
-    // Register a closure for output extraction, scoped by a ServiceFilter.
+    // Register a closure for request extraction, scoped by a ServiceFilter.
     pub fn register_request_hook<H>(&mut self, filter: ServiceFilter, hook: H)
     where
         H: for<'a> Fn(Service<'a>, Operation<'a>, &'a http::Request, &'a mut SW),
@@ -187,7 +188,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         self.request_hooks.push((filter, Box::new(hook)));
     }
 
-    // Register a closure for input extraction, scoped by a ServiceFilter.
+    // Register a closure for response extraction, scoped by a ServiceFilter.
     pub fn register_response_hook<H>(&mut self, filter: ServiceFilter, hook: H)
     where
         H: for<'a> Fn(Service<'a>, Operation<'a>, &'a http::Response, &'a mut SW),
@@ -273,26 +274,53 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         span.set_attribute(
             semco::CLOUD_REGION,
             cfg.load::<Region>()
-                .expect("region MUST be configured on requests")
+                .ok_or("No Region in the ConfigBag")?
                 .to_string(),
         );
-        let sdk_operation = if let Some((_guard, span)) = SpanPauser::pause_until(|span| {
-            span.metadata()
-                .map(|metadata| metadata.target().contains("::operation::"))
-                .unwrap_or_default()
-        }) {
+
+        let sdk_operation = {
+            #[cfg(feature = "tracing-backend")]
+            let span = {
+                use ::tracing::Span;
+                use utils::StorableOption;
+
+                // In the tracing context, the Span we want will have been put in the ConfigBag!
+                let so_span = cfg.load::<StorableOption<Span>>().ok_or(
+                    "AWS SDK operation top-level tracing:Span not found, \
+                        it likely means AWS changed their API, \
+                        please contact the maintainer immediately.",
+                )?;
+                so_span.as_ref().expect("StorableOption always set to Some")
+            };
+
+            #[cfg(all(feature = "otel-backend", not(feature = "tracing-backend")))]
+            let (_guard, span) = {
+                use utils::SpanPauser;
+
+                SpanPauser::pause_until(|span| {
+                    span.metadata()
+                        .map(|metadata| metadata.target().contains("::operation::"))
+                        .unwrap_or_default()
+                })
+                .ok_or(
+                    "AWS SDK operation top-level tracing:Span not found, \
+                    it likely means AWS changed their API, \
+                    please contact the maintainer immediately.",
+                )?
+            };
+
             let span_name = span
                 .metadata()
                 .ok_or("tracing::Span metadata not enabled")?
                 .name();
             let (service, operation) = span_name.split_once('.').ok_or_else(|| {
-                format!("AWS SDK operation top-level tracing:Span name does not have the expected form: {span_name}, it likely means AWS changed their API, please contact the maintainer immediatly.")
+                format!(
+                    "AWS SDK operation top-level tracing:Span name does not have \
+                    the expected form: {span_name}, it likely means AWS changed \
+                    their API, please contact the maintainer immediately."
+                )
             })?;
             AwsSdkOperation::new(service, operation)
-        } else {
-            return Err(
-                "AWS SDK operation top-level tracing:Span not found, it likely means AWS changed their API, please contact the maintainer immediatly.",
-            )?;
         };
 
         let service = sdk_operation.service();

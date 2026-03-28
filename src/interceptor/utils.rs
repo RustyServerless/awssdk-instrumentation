@@ -65,8 +65,10 @@ impl Drop for PausedSpanGuard {
     fn drop(&mut self) {
         // When droping, re-enable the spans in the reverse order of disablement
         while let Some(span) = self.paused_spans.pop() {
-            log::trace!("re-enabling span: {span:?}");
-            tracing::dispatcher::get_default(|d| d.enter(&span.id().expect("enabled span has id")));
+            if let Some(id) = span.id() {
+                log::trace!("re-enabling span: {span:?}");
+                tracing::dispatcher::get_default(|d| d.enter(&id));
+            }
         }
     }
 }

@@ -65,9 +65,10 @@ impl Intercept for TracingInterceptor {
                 .read_before_execution(context, cfg, &mut span)?;
 
             cfg.interceptor_state().store_put(StorableOption::new(span));
+            Ok(())
+        } else {
+            Err("No operation span found")?
         }
-
-        Ok(())
     }
 
     fn read_after_serialization(
@@ -78,7 +79,7 @@ impl Intercept for TracingInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<Span>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<Span> in the ConfigBag")?,
         );
         if let Some(span) = so_span.as_mut() {
             self.extractor
@@ -96,7 +97,7 @@ impl Intercept for TracingInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<Span>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<Span> in the ConfigBag")?,
         );
         if let Some(span) = so_span.as_mut() {
             self.extractor
@@ -114,7 +115,7 @@ impl Intercept for TracingInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<Span>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<Span> in the ConfigBag")?,
         );
 
         if let Some(span) = so_span.as_mut() {

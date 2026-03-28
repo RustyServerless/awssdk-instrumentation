@@ -16,7 +16,12 @@ use crate::env::default_resource;
 const ANNOTATION_ATTRIBUTES_ENV_VAR: &str = "XRAY_ANNOTATIONS";
 const METADATA_ATTRIBUTES_ENV_VAR: &str = "XRAY_METADATA";
 
-#[inline(always)]
+const DEFAULT_SAMPLING_STRATEGY: Sampler = if cfg!(feature = "env-lambda") {
+    Sampler::AlwaysOff
+} else {
+    Sampler::AlwaysOn
+};
+
 pub fn default_telemetry_init() -> SdkTracerProvider {
     let tracer_provider = default_tracer_provider();
     global::set_tracer_provider(tracer_provider.clone());
@@ -42,10 +47,9 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
     tracer_provider
 }
 
-#[inline(always)]
 pub fn default_tracer_provider() -> SdkTracerProvider {
     let builder = SdkTracerProvider::builder()
-        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOff)))
+        .with_sampler(Sampler::ParentBased(Box::new(DEFAULT_SAMPLING_STRATEGY)))
         .with_resource(default_resource());
 
     #[cfg(feature = "export-xray")]
@@ -92,7 +96,6 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
 }
 
 #[cfg(feature = "tracing-backend")]
-#[inline(always)]
 pub fn default_tracing_otel_layer<S, Tracer>(tracer: Tracer) -> impl Layer<S>
 where
     Tracer: OtelTracer + 'static,
@@ -114,7 +117,6 @@ where
 }
 
 #[cfg(feature = "tracing-backend")]
-#[inline(always)]
 pub fn default_tracing_console_layer<S>() -> impl Layer<S>
 where
     S: Subscriber + for<'any> LookupSpan<'any>,

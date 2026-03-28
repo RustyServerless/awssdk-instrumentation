@@ -3,7 +3,9 @@
 pub mod layer;
 pub mod macros;
 
+#[doc(hidden)]
 pub use lambda_runtime;
+#[doc(hidden)]
 pub use opentelemetry_sdk;
 
 pub use layer::OTelFaasTrigger;

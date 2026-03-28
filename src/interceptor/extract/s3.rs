@@ -15,7 +15,7 @@ use aws_sdk_s3::operation::{
     select_object_content::SelectObjectContentInput, upload_part::UploadPartInput,
     upload_part_copy::UploadPartCopyInput,
 };
-use aws_smithy_runtime_api::{client::interceptors::context, http};
+use aws_smithy_runtime_api::client::interceptors::context;
 use opentelemetry::Value;
 use opentelemetry_semantic_conventions::attribute as semco;
 
@@ -205,19 +205,6 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
             // Do nothing for other operations
             _ => {}
         };
-    }
-
-    fn extract_response(
-        &self,
-        _service: crate::interceptor::Service,
-        _operation: crate::interceptor::Operation,
-        response: &http::Response,
-        span: &mut SW,
-    ) {
-        // S3 returns an extended request ID in the `x-amz-id-2` response header.
-        if let Some(extended_id) = response.headers().get("x-amz-id-2") {
-            span.set_attribute(semco::AWS_EXTENDED_REQUEST_ID, extended_id.to_owned());
-        }
     }
 }
 
