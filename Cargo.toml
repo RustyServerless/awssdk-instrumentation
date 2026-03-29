@@ -11,6 +11,17 @@ documentation = "https://docs.rs/awssdk-instrumentation"
 readme = "README.md"
 keywords = ["aws", "otel", "xray", "lambda", "serverless"]
 categories = ["development-tools::debugging"]
+exclude = [
+    ".envrc",
+    ".hooks/",
+    "scripts/",
+    ".github/",
+    "nix/",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "flake.nix",
+    "flake.lock",
+]
 
 
 [dependencies]
@@ -58,9 +69,9 @@ otel-backend = []
 
 # --- Environment features ---
 env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio"]
-env-ecs = ["dep:reqwest"]
-env-eks = ["dep:reqwest"]
-env-ec2 = ["dep:reqwest"]
+env-ecs = ["dep:reqwest", "dep:serde"]
+env-eks = ["dep:reqwest", "dep:serde"]
+env-ec2 = ["dep:reqwest", "dep:serde"]
 
 # --- Extraction features ---
 extract-dynamodb = ["dep:aws-sdk-dynamodb", "dep:serde", "dep:serde_json"]

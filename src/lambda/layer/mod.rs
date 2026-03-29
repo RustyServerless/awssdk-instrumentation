@@ -10,7 +10,6 @@ mod otel;
 #[cfg(feature = "otel-backend")]
 pub use otel::OtelInstrumentor;
 
-pub use opentelemetry::trace::SpanKind;
 pub use utils::OTelFaasTrigger;
 
 use std::{marker::PhantomData, mem::ManuallyDrop, pin::Pin, task};
@@ -29,6 +28,7 @@ use crate::span_write::SpanWrite;
 // Tower Layer for Lambda invocations — creates a span per invocation,
 // extracts _X_AMZN_TRACE_ID, sets invocation attributes, flushes exporter.
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct InvocationContext {
     xray_trace_header: Option<XRayTraceHeader>,

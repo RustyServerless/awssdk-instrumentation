@@ -55,7 +55,9 @@ impl core::str::FromStr for XRayTraceHeader {
                 Self::LINEAGE => {
                     // Ignored
                 }
-                _ => return Err("Invalid Trace header".to_owned()),
+                // Ignore unrecognized keys — the X-Ray header format may be extended
+                // with new fields in the future
+                _ => {}
             }
         }
 

@@ -16,6 +16,9 @@ pub mod eks;
 #[cfg(feature = "env-ec2")]
 pub mod ec2;
 
+#[cfg(any(feature = "env-ec2", feature = "env-eks"))]
+mod imds;
+
 pub fn default_resource() -> Resource {
     #[cfg(feature = "env-lambda")]
     if let Some(resource) = lambda::lambda_resource(false) {

@@ -30,7 +30,7 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
     {
         use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-        let tracer = global::tracer("");
+        let tracer = global::tracer(env!("CARGO_PKG_NAME"));
         let otel_layer = default_tracing_otel_layer(tracer);
 
         // Initialize tracing

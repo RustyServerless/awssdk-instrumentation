@@ -8,75 +8,62 @@ use opentelemetry_semantic_conventions::attribute as semco;
 pub fn ecs_resource() -> Option<Resource> {
     let metadata_uri = std::env::var("ECS_CONTAINER_METADATA_URI_V4").ok()?;
 
-    let client = match reqwest::blocking::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
-    {
-        Ok(c) => c,
-        Err(_) => return None,
-    };
+        .ok()?;
 
-    let task: EcsTaskMetadata = match client.get(format!("{}/task", metadata_uri)).send() {
-        Ok(resp) => match resp.json() {
-            Ok(task) => task,
-            Err(_) => return None,
-        },
-        Err(_) => return None,
-    };
+    let task: EcsTaskMetadata = client
+        .get(format!("{metadata_uri}/task"))
+        .send()
+        .ok()?
+        .json()
+        .ok()?;
 
-    let mut attributes = vec![
-        KeyValue::new(semco::CLOUD_PROVIDER, "aws"),
-        KeyValue::new(semco::CLOUD_PLATFORM, "aws_ecs"),
+    // Container-level metadata (ARN and runtime ID) — from the container endpoint
+    let container: Option<EcsContainerMetadata> = client
+        .get(&metadata_uri)
+        .send()
+        .ok()
+        .and_then(|r| r.json().ok());
+
+    let attribute_options = [
+        Some(KeyValue::new(semco::CLOUD_PROVIDER, "aws")),
+        Some(KeyValue::new(semco::CLOUD_PLATFORM, "aws_ecs")),
+        task.cluster
+            .map(|c| KeyValue::new(semco::AWS_ECS_CLUSTER_ARN, c)),
+        task.task_arn
+            .as_ref()
+            .map(|arn| KeyValue::new(semco::AWS_ECS_TASK_ARN, arn.to_owned())),
+        task.task_arn
+            .as_ref()
+            .and_then(|arn| arn.split(':').nth(3))
+            .map(|r| KeyValue::new(semco::CLOUD_REGION, r.to_owned())),
+        task.task_arn
+            .as_ref()
+            .and_then(|arn| arn.split(':').nth(4))
+            .map(|a| KeyValue::new(semco::CLOUD_ACCOUNT_ID, a.to_owned())),
+        task.family
+            .map(|f| KeyValue::new(semco::AWS_ECS_TASK_FAMILY, f)),
+        task.revision
+            .map(|r| KeyValue::new(semco::AWS_ECS_TASK_REVISION, r)),
+        container
+            .as_ref()
+            .and_then(|c| c.container_arn.as_ref())
+            .map(|a| KeyValue::new(semco::AWS_ECS_CONTAINER_ARN, a.clone())),
+        container
+            .and_then(|c| c.docker_id)
+            .map(|id| KeyValue::new(semco::CONTAINER_ID, id)),
     ];
 
-    if let Some(cluster) = task.cluster {
-        attributes.push(KeyValue::new(semco::AWS_ECS_CLUSTER_ARN, cluster));
-    }
-
-    if let Some(task_arn) = task.task_arn {
-        attributes.push(KeyValue::new(semco::AWS_ECS_TASK_ARN, task_arn.clone()));
-
-        // Extract account ID from task ARN: arn:aws:ecs:region:account-id:task/cluster-name/task-id
-        if let Some(account_id) = task_arn.split(':').nth(4) {
-            attributes.push(KeyValue::new(
-                semco::CLOUD_ACCOUNT_ID,
-                account_id.to_owned(),
-            ));
-        }
-
-        // Extract region from task ARN
-        if let Some(region) = task_arn.split(':').nth(3) {
-            attributes.push(KeyValue::new(semco::CLOUD_REGION, region.to_owned()));
-        }
-    }
-
-    if let Some(family) = task.family {
-        attributes.push(KeyValue::new(semco::AWS_ECS_TASK_FAMILY, family));
-    }
-
-    if let Some(revision) = task.revision {
-        attributes.push(KeyValue::new(semco::AWS_ECS_TASK_REVISION, revision));
-    }
-
-    if let Some(container_instance_id) = task.container_instance_arn {
-        attributes.push(KeyValue::new(
-            semco::AWS_ECS_CONTAINER_ARN,
-            container_instance_id,
-        ));
-    }
-
-    // Containers
-    for container in task.containers.unwrap_or_default() {
-        if let Some(id) = container.id {
-            attributes.push(KeyValue::new(semco::CONTAINER_ID, id));
-            break;
-        }
-    }
-
-    Some(Resource::builder().with_attributes(attributes).build())
+    Some(
+        Resource::builder()
+            .with_attributes(attribute_options.into_iter().flatten())
+            .build(),
+    )
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize)]
 struct EcsTaskMetadata {
     #[serde(rename = "Cluster")]
     cluster: Option<String>,
@@ -86,14 +73,13 @@ struct EcsTaskMetadata {
     family: Option<String>,
     #[serde(rename = "Revision")]
     revision: Option<String>,
-    #[serde(rename = "ContainerInstanceARN")]
-    container_instance_arn: Option<String>,
-    #[serde(rename = "Containers")]
-    containers: Option<Vec<EcsContainer>>,
 }
 
-#[derive(serde::Deserialize, Debug)]
-struct EcsContainer {
-    #[serde(rename = "Id")]
-    id: Option<String>,
+// Per-container metadata (from GET $ECS_CONTAINER_METADATA_URI_V4 without /task)
+#[derive(serde::Deserialize)]
+struct EcsContainerMetadata {
+    #[serde(rename = "ContainerARN")]
+    container_arn: Option<String>,
+    #[serde(rename = "DockerId")]
+    docker_id: Option<String>,
 }

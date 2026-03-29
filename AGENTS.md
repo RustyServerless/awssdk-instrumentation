@@ -89,9 +89,13 @@ the declared MSRV.
 
 ### Error Handling
 
-- Return `Result` types from fallible functions; do not `unwrap()` or `expect()` in
-  non-test code.
-- `unwrap()`, `expect()`, and `assert!` macros are acceptable in test code.
+- Return `Result` types from fallible functions; avoid panicking in library code.
+- `unwrap()`, `expect()`, and `assert!` macros are always acceptable in test code.
+- `unwrap()` is acceptable in non-test code **only** when the reason it cannot panic is
+  immediately obvious from the surrounding code (e.g., a `None`-check 2 lines earlier).
+- `expect("reason")` is acceptable in non-test code when a panic is not possible in
+  practice — the message must explain why (e.g., `expect("set in read_before_execution")`).
+  Do not use `expect()` as a shortcut to avoid proper error handling.
 - Define meaningful error types; consider using `thiserror` for library errors.
 
 ### Documentation
@@ -170,7 +174,8 @@ src/
     ├── lambda.rs                   # (env-lambda)
     ├── ecs.rs                      # (env-ecs)
     ├── eks.rs                      # (env-eks)
-    └── ec2.rs                      # (env-ec2)
+    ├── ec2.rs                      # (env-ec2)
+    └── imds.rs                     # (env-ec2 or env-eks) IMDSv2 client
 ```
 
 ## Release Process

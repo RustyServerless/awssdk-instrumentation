@@ -3,7 +3,7 @@
 
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
-#[inline(always)]
+#[doc(hidden)]
 pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
     match tracer_provider.force_flush() {
         Ok(_) => {

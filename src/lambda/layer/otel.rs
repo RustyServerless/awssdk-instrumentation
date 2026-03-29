@@ -66,7 +66,7 @@ impl Instrumentor for OtelInstrumentor {
     type InvocationSpan = Context;
 
     fn instrument<F: Future>(inner: F, context: super::InvocationContext) -> Self::IFut<F> {
-        let tracer = opentelemetry::global::tracer("");
+        let tracer = opentelemetry::global::tracer(env!("CARGO_PKG_NAME"));
 
         let span_builder = SpanBuilder::from_name(
             env::var("AWS_LAMBDA_FUNCTION_NAME")
@@ -102,8 +102,11 @@ impl Instrumentor for OtelInstrumentor {
 
             otel_context.with_span(span)
         } else {
-            let span = tracer.build(span_builder);
-            opentelemetry::Context::current().with_span(span)
+            // Use a fresh, empty context as parent so the invocation span is a root span.
+            // Context::current() is intentionally avoided to prevent stale state from a
+            // previous invocation from being inherited.
+            let span = tracer.build_with_context(span_builder, &opentelemetry::Context::new());
+            opentelemetry::Context::new().with_span(span)
         };
 
         // Scope the task-local so with_invocation_span can find it

@@ -95,7 +95,7 @@ impl Intercept for OtelInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<BoxedSpan>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<BoxedSpan> in the ConfigBag")?,
         );
         if let Some(span) = so_span.as_mut() {
             self.extractor
@@ -113,7 +113,7 @@ impl Intercept for OtelInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<BoxedSpan>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<BoxedSpan> in the ConfigBag")?,
         );
         if let Some(span) = so_span.as_mut() {
             self.extractor
@@ -131,7 +131,7 @@ impl Intercept for OtelInterceptor {
     ) -> Result<(), BoxError> {
         let mut so_span = std::mem::take(
             cfg.get_mut_from_interceptor_state::<StorableOption<BoxedSpan>>()
-                .expect("added in read_before_execution"),
+                .ok_or("No StorableOption<BoxedSpan> in the ConfigBag")?,
         );
 
         if let Some(span) = so_span.as_mut() {
