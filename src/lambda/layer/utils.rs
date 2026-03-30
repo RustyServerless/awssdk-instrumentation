@@ -143,3 +143,95 @@ impl std::fmt::Display for OTelFaasTrigger {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::{SpanId, TraceFlags, TraceId};
+
+    // Tests for XRayTraceHeader::from_str — comprehensive
+
+    #[test]
+    fn xray_trace_header_valid_sampled_1() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=1";
+        let parsed: XRayTraceHeader = header.parse().unwrap();
+
+        assert_eq!(
+            parsed.trace_id,
+            TraceId::from_hex("5759e988bd862e3fe1be46a994272793").unwrap()
+        );
+        assert_eq!(
+            parsed.parent_id,
+            SpanId::from_hex("53995c3f42cd8ad8").unwrap()
+        );
+        assert_eq!(parsed.sampled, TraceFlags::SAMPLED);
+    }
+
+    #[test]
+    fn xray_trace_header_valid_sampled_0() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=0";
+        let parsed: XRayTraceHeader = header.parse().unwrap();
+
+        assert_eq!(
+            parsed.trace_id,
+            TraceId::from_hex("5759e988bd862e3fe1be46a994272793").unwrap()
+        );
+        assert_eq!(
+            parsed.parent_id,
+            SpanId::from_hex("53995c3f42cd8ad8").unwrap()
+        );
+        assert_eq!(parsed.sampled, TraceFlags::NOT_SAMPLED);
+    }
+
+    #[test]
+    fn xray_trace_header_valid_with_lineage_field() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=1;Lineage=a87bd80c:1|68fd508a:5|c512fbe3:2";
+        let parsed: XRayTraceHeader = header.parse().unwrap();
+
+        assert_eq!(
+            parsed.trace_id,
+            TraceId::from_hex("5759e988bd862e3fe1be46a994272793").unwrap()
+        );
+        assert_eq!(
+            parsed.parent_id,
+            SpanId::from_hex("53995c3f42cd8ad8").unwrap()
+        );
+        assert_eq!(parsed.sampled, TraceFlags::SAMPLED);
+    }
+
+    #[test]
+    fn xray_trace_header_valid_with_unknown_fields() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=1;FutureField=somevalue";
+        let parsed: XRayTraceHeader = header.parse().unwrap();
+
+        assert_eq!(
+            parsed.trace_id,
+            TraceId::from_hex("5759e988bd862e3fe1be46a994272793").unwrap()
+        );
+        assert_eq!(
+            parsed.parent_id,
+            SpanId::from_hex("53995c3f42cd8ad8").unwrap()
+        );
+        assert_eq!(parsed.sampled, TraceFlags::SAMPLED);
+    }
+
+    #[test]
+    fn xray_trace_header_missing_parent_field() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Sampled=1";
+        let result: Result<XRayTraceHeader, _> = header.parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn xray_trace_header_invalid_sampled_value() {
+        let header = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=2";
+        let result: Result<XRayTraceHeader, _> = header.parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn xray_trace_header_empty_string() {
+        let result: Result<XRayTraceHeader, _> = "".parse();
+        assert!(result.is_err());
+    }
+}

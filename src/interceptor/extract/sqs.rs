@@ -315,3 +315,236 @@ fn set_queue_url_attrs(span: &mut impl SpanWrite, queue_url: Option<&str>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::Value;
+    use opentelemetry_semantic_conventions::attribute as semco;
+
+    use crate::span_write::{SpanWrite, Status};
+
+    struct TestSpan {
+        attributes: Vec<(&'static str, Value)>,
+        status: Option<Status>,
+    }
+
+    impl TestSpan {
+        fn new() -> Self {
+            Self {
+                attributes: vec![],
+                status: None,
+            }
+        }
+
+        fn get(&self, key: &str) -> Option<&Value> {
+            self.attributes
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v)
+        }
+    }
+
+    impl SpanWrite for TestSpan {
+        fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
+            self.attributes.push((key, value.into()));
+        }
+
+        fn set_status(&mut self, code: Status) {
+            self.status = Some(code);
+        }
+    }
+
+    // Tests for operation_type — 2 consolidated tests
+
+    #[test]
+    fn operation_type_known_mappings() {
+        // send operations
+        assert_eq!(operation_type("SendMessage"), Some("send"));
+        assert_eq!(operation_type("SendMessageBatch"), Some("send"));
+
+        // receive operations
+        assert_eq!(operation_type("ReceiveMessage"), Some("receive"));
+
+        // settle operations
+        assert_eq!(operation_type("DeleteMessage"), Some("settle"));
+        assert_eq!(operation_type("DeleteMessageBatch"), Some("settle"));
+        assert_eq!(operation_type("ChangeMessageVisibility"), Some("settle"));
+        assert_eq!(
+            operation_type("ChangeMessageVisibilityBatch"),
+            Some("settle")
+        );
+    }
+
+    #[test]
+    fn operation_type_no_mapping() {
+        // Queue management operations have no messaging operation type
+        assert_eq!(operation_type("CreateQueue"), None);
+        assert_eq!(operation_type("GetQueueUrl"), None);
+        assert_eq!(operation_type("ListQueues"), None);
+        assert_eq!(operation_type("PurgeQueue"), None);
+        assert_eq!(operation_type("UnknownOp"), None);
+    }
+
+    // Tests for SQSExtractor::extract_output — 2 consolidated tests
+
+    #[test]
+    fn extract_output_valid_outputs() {
+        use aws_sdk_sqs::operation::{
+            receive_message::ReceiveMessageOutput, send_message::SendMessageOutput,
+            send_message_batch::SendMessageBatchOutput,
+        };
+        use aws_sdk_sqs::types::{Message, SendMessageBatchResultEntry};
+        use aws_smithy_runtime_api::client::interceptors::context;
+
+        let extractor = SQSExtractor::new();
+
+        // SendMessage with a message_id set — should set messaging.message.id
+        let sdk_output = SendMessageOutput::builder()
+            .message_id("msg-abc-123")
+            .build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "SendMessage", &output, &mut span);
+        assert_eq!(
+            span.get(semco::MESSAGING_MESSAGE_ID),
+            Some(&Value::from("msg-abc-123"))
+        );
+
+        // SendMessageBatch with 2 successful entries — should set messaging.batch.message_count = 2
+        let entry1 = SendMessageBatchResultEntry::builder()
+            .id("id-1")
+            .message_id("msg-1")
+            .md5_of_message_body("abc")
+            .build()
+            .unwrap();
+        let entry2 = SendMessageBatchResultEntry::builder()
+            .id("id-2")
+            .message_id("msg-2")
+            .md5_of_message_body("def")
+            .build()
+            .unwrap();
+        let sdk_output = SendMessageBatchOutput::builder()
+            .successful(entry1)
+            .successful(entry2)
+            .set_failed(Some(vec![]))
+            .build()
+            .unwrap();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "SendMessageBatch", &output, &mut span);
+        assert_eq!(
+            span.get(semco::MESSAGING_BATCH_MESSAGE_COUNT),
+            Some(&Value::I64(2))
+        );
+
+        // ReceiveMessage with 3 messages — should set messaging.batch.message_count = 3
+        let sdk_output = ReceiveMessageOutput::builder()
+            .messages(Message::builder().message_id("m1").build())
+            .messages(Message::builder().message_id("m2").build())
+            .messages(Message::builder().message_id("m3").build())
+            .build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "ReceiveMessage", &output, &mut span);
+        assert_eq!(
+            span.get(semco::MESSAGING_BATCH_MESSAGE_COUNT),
+            Some(&Value::I64(3))
+        );
+    }
+
+    #[test]
+    fn extract_output_noop_and_edge_cases() {
+        use aws_sdk_sqs::operation::{
+            receive_message::ReceiveMessageOutput, send_message::SendMessageOutput,
+            send_message_batch::SendMessageBatchOutput,
+        };
+        use aws_smithy_runtime_api::client::interceptors::context;
+
+        let extractor = SQSExtractor::new();
+
+        // SendMessage with no message_id — should NOT set messaging.message.id
+        let sdk_output = SendMessageOutput::builder().build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "SendMessage", &output, &mut span);
+        assert!(span.get(semco::MESSAGING_MESSAGE_ID).is_none());
+
+        // Unknown operation — should set no attributes at all
+        let sdk_output = SendMessageOutput::builder().build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "UnknownOperation", &output, &mut span);
+        assert!(span.attributes.is_empty());
+
+        // SendMessageBatch with no successful entries — should set count = 0
+        let sdk_output = SendMessageBatchOutput::builder()
+            .set_successful(Some(vec![]))
+            .set_failed(Some(vec![]))
+            .build()
+            .unwrap();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "SendMessageBatch", &output, &mut span);
+        assert_eq!(
+            span.get(semco::MESSAGING_BATCH_MESSAGE_COUNT),
+            Some(&Value::I64(0))
+        );
+
+        // ReceiveMessage with no messages — should set count = 0
+        let sdk_output = ReceiveMessageOutput::builder().build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        extractor.extract_output("SQS", "ReceiveMessage", &output, &mut span);
+        assert_eq!(
+            span.get(semco::MESSAGING_BATCH_MESSAGE_COUNT),
+            Some(&Value::I64(0))
+        );
+    }
+
+    // Tests for set_queue_url_attrs — 2 consolidated tests
+
+    #[test]
+    fn set_queue_url_attrs_valid_url() {
+        let mut span = TestSpan::new();
+        set_queue_url_attrs(
+            &mut span,
+            Some("https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"),
+        );
+
+        assert_eq!(
+            span.get(semco::AWS_SQS_QUEUE_URL),
+            Some(&Value::from(
+                "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+            ))
+        );
+        assert_eq!(
+            span.get(semco::MESSAGING_DESTINATION_NAME),
+            Some(&Value::from("my-queue"))
+        );
+    }
+
+    #[test]
+    fn set_queue_url_attrs_none_and_trailing_slash() {
+        // None URL: no attributes set
+        let mut span = TestSpan::new();
+        set_queue_url_attrs(&mut span, None);
+        assert!(span.attributes.is_empty());
+
+        // URL with trailing slash: destination name should not be set (empty segment filtered out)
+        let mut span = TestSpan::new();
+        set_queue_url_attrs(
+            &mut span,
+            Some("https://sqs.us-east-1.amazonaws.com/123456789012/my-queue/"),
+        );
+        assert_eq!(
+            span.get(semco::AWS_SQS_QUEUE_URL),
+            Some(&Value::from(
+                "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue/"
+            ))
+        );
+        // Trailing slash produces an empty last segment, which is filtered out
+        assert_eq!(span.get(semco::MESSAGING_DESTINATION_NAME), None);
+    }
+}

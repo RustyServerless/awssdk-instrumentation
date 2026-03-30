@@ -288,3 +288,221 @@ fn set_part_number(span: &mut impl SpanWrite, part_number: Option<i32>) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_s3::operation::{copy_object::CopyObjectInput, get_object::GetObjectInput};
+    use aws_smithy_runtime_api::client::interceptors::context;
+    use opentelemetry::Value;
+    use opentelemetry_semantic_conventions::attribute as semco;
+
+    use crate::span_write::{SpanWrite, Status};
+
+    // ── TestSpan helper ──────────────────────────────────────────────────────
+
+    struct TestSpan {
+        attributes: Vec<(&'static str, Value)>,
+        status: Option<Status>,
+    }
+
+    impl TestSpan {
+        fn new() -> Self {
+            Self {
+                attributes: vec![],
+                status: None,
+            }
+        }
+
+        fn get(&self, key: &str) -> Option<&Value> {
+            self.attributes
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v)
+        }
+    }
+
+    impl SpanWrite for TestSpan {
+        fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
+            self.attributes.push((key, value.into()));
+        }
+
+        fn set_status(&mut self, code: Status) {
+            self.status = Some(code);
+        }
+    }
+
+    // ── set_bucket ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_bucket_with_value() {
+        let mut span = TestSpan::new();
+        set_bucket(&mut span, Some("my-bucket"));
+        assert_eq!(
+            span.get(semco::AWS_S3_BUCKET),
+            Some(&Value::String("my-bucket".into()))
+        );
+    }
+
+    #[test]
+    fn set_bucket_none() {
+        let mut span = TestSpan::new();
+        set_bucket(&mut span, None);
+        assert!(span.get(semco::AWS_S3_BUCKET).is_none());
+    }
+
+    // ── set_key ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_key_with_value() {
+        let mut span = TestSpan::new();
+        set_key(&mut span, Some("path/to/object.txt"));
+        assert_eq!(
+            span.get(semco::AWS_S3_KEY),
+            Some(&Value::String("path/to/object.txt".into()))
+        );
+    }
+
+    #[test]
+    fn set_key_none() {
+        let mut span = TestSpan::new();
+        set_key(&mut span, None);
+        assert!(span.get(semco::AWS_S3_KEY).is_none());
+    }
+
+    // ── set_copy_source ──────────────────────────────────────────────────────
+
+    #[test]
+    fn set_copy_source_with_value() {
+        let mut span = TestSpan::new();
+        set_copy_source(&mut span, Some("source-bucket/source-key"));
+        assert_eq!(
+            span.get(semco::AWS_S3_COPY_SOURCE),
+            Some(&Value::String("source-bucket/source-key".into()))
+        );
+    }
+
+    #[test]
+    fn set_copy_source_none() {
+        let mut span = TestSpan::new();
+        set_copy_source(&mut span, None);
+        assert!(span.get(semco::AWS_S3_COPY_SOURCE).is_none());
+    }
+
+    // ── set_upload_id ────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_upload_id_with_value() {
+        let mut span = TestSpan::new();
+        set_upload_id(&mut span, Some("upload-123"));
+        assert_eq!(
+            span.get(semco::AWS_S3_UPLOAD_ID),
+            Some(&Value::String("upload-123".into()))
+        );
+    }
+
+    #[test]
+    fn set_upload_id_none() {
+        let mut span = TestSpan::new();
+        set_upload_id(&mut span, None);
+        assert!(span.get(semco::AWS_S3_UPLOAD_ID).is_none());
+    }
+
+    // ── set_part_number ──────────────────────────────────────────────────────
+
+    #[test]
+    fn set_part_number_with_value() {
+        let mut span = TestSpan::new();
+        set_part_number(&mut span, Some(42_i32));
+        assert_eq!(span.get(semco::AWS_S3_PART_NUMBER), Some(&Value::I64(42)));
+    }
+
+    #[test]
+    fn set_part_number_none() {
+        let mut span = TestSpan::new();
+        set_part_number(&mut span, None);
+        assert!(span.get(semco::AWS_S3_PART_NUMBER).is_none());
+    }
+
+    // ── S3Extractor::extract_input dispatch ──────────────────────────────────
+
+    #[test]
+    fn extract_input_get_object_sets_bucket_key_part_number() {
+        let extractor = S3Extractor::new();
+
+        // GetObject — sets bucket, key, part_number
+        let sdk_input = GetObjectInput::builder()
+            .bucket("my-bucket")
+            .key("path/to/object.txt")
+            .part_number(7)
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+        extractor.extract_input("S3", "GetObject", &input, &mut span);
+
+        assert_eq!(
+            span.get(semco::AWS_S3_BUCKET),
+            Some(&Value::String("my-bucket".into()))
+        );
+        assert_eq!(
+            span.get(semco::AWS_S3_KEY),
+            Some(&Value::String("path/to/object.txt".into()))
+        );
+        assert_eq!(span.get(semco::AWS_S3_PART_NUMBER), Some(&Value::I64(7)));
+
+        // GetObject without part_number — part_number attribute must be absent
+        let sdk_input_no_part = GetObjectInput::builder()
+            .bucket("other-bucket")
+            .key("other/key")
+            .build()
+            .unwrap();
+        let input_no_part = context::Input::erase(sdk_input_no_part);
+        let mut span2 = TestSpan::new();
+        extractor.extract_input("S3", "GetObject", &input_no_part, &mut span2);
+        assert!(span2.get(semco::AWS_S3_PART_NUMBER).is_none());
+    }
+
+    #[test]
+    fn extract_input_copy_object_and_unknown_operation() {
+        let extractor = S3Extractor::new();
+
+        // CopyObject — sets bucket, key, copy_source
+        let copy_input = CopyObjectInput::builder()
+            .bucket("dest-bucket")
+            .key("dest/key")
+            .copy_source("source-bucket/source-key")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(copy_input);
+        let mut span = TestSpan::new();
+        extractor.extract_input("S3", "CopyObject", &input, &mut span);
+
+        assert_eq!(
+            span.get(semco::AWS_S3_BUCKET),
+            Some(&Value::String("dest-bucket".into()))
+        );
+        assert_eq!(
+            span.get(semco::AWS_S3_KEY),
+            Some(&Value::String("dest/key".into()))
+        );
+        assert_eq!(
+            span.get(semco::AWS_S3_COPY_SOURCE),
+            Some(&Value::String("source-bucket/source-key".into()))
+        );
+        // upload_id must not be set for CopyObject
+        assert!(span.get(semco::AWS_S3_UPLOAD_ID).is_none());
+
+        // Unknown operation — no attributes set
+        let get_input = GetObjectInput::builder()
+            .bucket("my-bucket")
+            .key("some/key")
+            .build()
+            .unwrap();
+        let input_unknown = context::Input::erase(get_input);
+        let mut span_unknown = TestSpan::new();
+        extractor.extract_input("S3", "UnknownOperation", &input_unknown, &mut span_unknown);
+        assert!(span_unknown.attributes.is_empty());
+    }
+}

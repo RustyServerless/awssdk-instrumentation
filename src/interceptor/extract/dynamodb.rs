@@ -747,3 +747,872 @@ impl Serialize for SerCapacityMap<'_> {
         map.end()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use aws_smithy_runtime_api::client::interceptors::context;
+    use opentelemetry::Value;
+
+    use crate::span_write::{SpanWrite, Status};
+
+    // ---------------------------------------------------------------------------
+    // Test span implementation
+    // ---------------------------------------------------------------------------
+
+    struct TestSpan {
+        attributes: Vec<(&'static str, Value)>,
+        status: Option<Status>,
+    }
+
+    impl TestSpan {
+        fn new() -> Self {
+            Self {
+                attributes: vec![],
+                status: None,
+            }
+        }
+
+        fn get(&self, key: &str) -> Option<&Value> {
+            self.attributes
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v)
+        }
+    }
+
+    impl SpanWrite for TestSpan {
+        fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
+            self.attributes.push((key, value.into()));
+        }
+
+        fn set_status(&mut self, code: Status) {
+            self.status = Some(code);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // SerCapacity serialization — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn ser_capacity_all_fields() {
+        let cap = types::Capacity::builder()
+            .capacity_units(5.0)
+            .read_capacity_units(2.0)
+            .write_capacity_units(3.0)
+            .build();
+
+        let json = serde_json::to_string(&SerCapacity(&cap)).unwrap();
+
+        assert!(json.contains("\"CapacityUnits\":5.0"));
+        assert!(json.contains("\"ReadCapacityUnits\":2.0"));
+        assert!(json.contains("\"WriteCapacityUnits\":3.0"));
+    }
+
+    #[test]
+    fn ser_capacity_partial_fields() {
+        // Only capacity_units set
+        let cap_only_cu = types::Capacity::builder().capacity_units(10.0).build();
+        let json = serde_json::to_string(&SerCapacity(&cap_only_cu)).unwrap();
+        assert!(json.contains("\"CapacityUnits\":10.0"));
+        assert!(!json.contains("ReadCapacityUnits"));
+        assert!(!json.contains("WriteCapacityUnits"));
+
+        // Empty capacity
+        let cap_empty = types::Capacity::builder().build();
+        let json_empty = serde_json::to_string(&SerCapacity(&cap_empty)).unwrap();
+        assert_eq!(json_empty, "{}");
+    }
+
+    // ---------------------------------------------------------------------------
+    // SerConsumedCapacity serialization — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn ser_consumed_capacity_all_fields() {
+        let table_cap = types::Capacity::builder().capacity_units(1.0).build();
+        let cc = types::ConsumedCapacity::builder()
+            .table_name("my-table")
+            .capacity_units(10.0)
+            .read_capacity_units(4.0)
+            .write_capacity_units(6.0)
+            .table(table_cap)
+            .build();
+
+        let json = serde_json::to_string(&SerConsumedCapacity(&cc)).unwrap();
+
+        assert!(json.contains("\"TableName\":\"my-table\""));
+        assert!(json.contains("\"CapacityUnits\":10.0"));
+        assert!(json.contains("\"ReadCapacityUnits\":4.0"));
+        assert!(json.contains("\"WriteCapacityUnits\":6.0"));
+        assert!(json.contains("\"Table\":{\"CapacityUnits\":1.0}"));
+    }
+
+    #[test]
+    fn ser_consumed_capacity_with_indexes() {
+        let mut lsi = std::collections::HashMap::new();
+        lsi.insert(
+            "lsi-1".to_string(),
+            types::Capacity::builder().capacity_units(0.5).build(),
+        );
+        let mut gsi = std::collections::HashMap::new();
+        gsi.insert(
+            "gsi-1".to_string(),
+            types::Capacity::builder().capacity_units(1.5).build(),
+        );
+
+        let cc = types::ConsumedCapacity::builder()
+            .table_name("my-table")
+            .capacity_units(5.0)
+            .set_local_secondary_indexes(Some(lsi))
+            .set_global_secondary_indexes(Some(gsi))
+            .build();
+
+        let json = serde_json::to_string(&SerConsumedCapacity(&cc)).unwrap();
+
+        assert!(json.contains("\"TableName\":\"my-table\""));
+        assert!(json.contains("\"LocalSecondaryIndexes\""));
+        assert!(json.contains("\"lsi-1\""));
+        assert!(json.contains("\"GlobalSecondaryIndexes\""));
+        assert!(json.contains("\"gsi-1\""));
+    }
+
+    // ---------------------------------------------------------------------------
+    // set_table_names — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn set_table_names_non_empty() {
+        let mut span = TestSpan::new();
+
+        // Single table
+        set_table_names(&mut span, ["orders"]);
+        let val = span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), Value::Array(_)));
+
+        // Multiple tables
+        let mut span2 = TestSpan::new();
+        set_table_names(&mut span2, ["table-a", "table-b"]);
+        let val2 =
+            span2.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
+        assert!(val2.is_some());
+        if let Value::Array(opentelemetry::Array::String(names)) = val2.unwrap() {
+            assert_eq!(names.len(), 2);
+        } else {
+            panic!("expected Array::String");
+        }
+    }
+
+    #[test]
+    fn set_table_names_empty() {
+        let mut span = TestSpan::new();
+        set_table_names(&mut span, std::iter::empty::<&str>());
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // set_consumed_capacity_opt — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn set_consumed_capacity_opt_some() {
+        let cc = types::ConsumedCapacity::builder()
+            .table_name("orders")
+            .capacity_units(2.0)
+            .build();
+        let mut span = TestSpan::new();
+        set_consumed_capacity_opt(&mut span, Some(&cc));
+
+        let val =
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY);
+        assert!(val.is_some());
+        if let Value::Array(opentelemetry::Array::String(items)) = val.unwrap() {
+            assert_eq!(items.len(), 1);
+            let s: &str = items[0].as_ref();
+            assert!(s.contains("orders"));
+        } else {
+            panic!("expected Array::String");
+        }
+    }
+
+    #[test]
+    fn set_consumed_capacity_opt_none() {
+        let mut span = TestSpan::new();
+        set_consumed_capacity_opt(&mut span, None);
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // set_consumed_capacity_list — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn set_consumed_capacity_list_non_empty() {
+        let ccs = vec![
+            types::ConsumedCapacity::builder()
+                .table_name("table-1")
+                .capacity_units(1.0)
+                .build(),
+            types::ConsumedCapacity::builder()
+                .table_name("table-2")
+                .capacity_units(2.0)
+                .build(),
+        ];
+        let mut span = TestSpan::new();
+        set_consumed_capacity_list(&mut span, &ccs);
+
+        let val =
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY);
+        assert!(val.is_some());
+        if let Value::Array(opentelemetry::Array::String(items)) = val.unwrap() {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected Array::String");
+        }
+    }
+
+    #[test]
+    fn set_consumed_capacity_list_empty() {
+        let mut span = TestSpan::new();
+        set_consumed_capacity_list(&mut span, &[]);
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_get_item_input — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_get_item_input_full() {
+        use aws_sdk_dynamodb::operation::get_item::GetItemInput;
+
+        let sdk_input = GetItemInput::builder()
+            .table_name("orders")
+            .consistent_read(true)
+            .projection_expression("id, #name")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_get_item_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSISTENT_READ),
+            Some(&Value::Bool(true))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_PROJECTION)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn extract_get_item_input_minimal() {
+        use aws_sdk_dynamodb::operation::get_item::GetItemInput;
+
+        let sdk_input = GetItemInput::builder()
+            .table_name("orders")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_get_item_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSISTENT_READ)
+                .is_none()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_PROJECTION)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_query_input — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_query_input_all_attributes() {
+        use aws_sdk_dynamodb::operation::query::QueryInput;
+        use aws_sdk_dynamodb::types::Select;
+
+        let sdk_input = QueryInput::builder()
+            .table_name("orders")
+            .consistent_read(true)
+            .projection_expression("id, amount")
+            .index_name("status-index")
+            .select(Select::AllAttributes)
+            .limit(50)
+            .scan_index_forward(false)
+            .attributes_to_get("id")
+            .attributes_to_get("amount")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_query_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSISTENT_READ),
+            Some(&Value::Bool(true))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_PROJECTION)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_INDEX_NAME)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SELECT)
+                .is_some()
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_LIMIT),
+            Some(&Value::I64(50))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SCAN_FORWARD),
+            Some(&Value::Bool(false))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_ATTRIBUTES_TO_GET)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn extract_query_input_minimal() {
+        use aws_sdk_dynamodb::operation::query::QueryInput;
+
+        let sdk_input = QueryInput::builder().table_name("orders").build().unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_query_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SCAN_FORWARD)
+                .is_none()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_LIMIT)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_scan_input — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_scan_input_all_attributes() {
+        use aws_sdk_dynamodb::operation::scan::ScanInput;
+        use aws_sdk_dynamodb::types::Select;
+
+        let sdk_input = ScanInput::builder()
+            .table_name("orders")
+            .consistent_read(true)
+            .projection_expression("id")
+            .index_name("status-index")
+            .select(Select::AllAttributes)
+            .limit(100)
+            .segment(2)
+            .total_segments(10)
+            .attributes_to_get("id")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_scan_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSISTENT_READ),
+            Some(&Value::Bool(true))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_PROJECTION)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_INDEX_NAME)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SELECT)
+                .is_some()
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_LIMIT),
+            Some(&Value::I64(100))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SEGMENT),
+            Some(&Value::I64(2))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TOTAL_SEGMENTS),
+            Some(&Value::I64(10))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_ATTRIBUTES_TO_GET)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn extract_scan_input_minimal() {
+        use aws_sdk_dynamodb::operation::scan::ScanInput;
+
+        let sdk_input = ScanInput::builder().table_name("orders").build().unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_scan_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SEGMENT)
+                .is_none()
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TOTAL_SEGMENTS)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_list_tables_input — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_list_tables_input_with_params() {
+        use aws_sdk_dynamodb::operation::list_tables::ListTablesInput;
+
+        let sdk_input = ListTablesInput::builder()
+            .limit(20)
+            .exclusive_start_table_name("last-seen-table")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_list_tables_input(&input, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_LIMIT),
+            Some(&Value::I64(20))
+        );
+        assert!(
+            span.get(
+                opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_EXCLUSIVE_START_TABLE
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn extract_list_tables_input_empty() {
+        use aws_sdk_dynamodb::operation::list_tables::ListTablesInput;
+
+        let sdk_input = ListTablesInput::builder().build().unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_list_tables_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_LIMIT)
+                .is_none()
+        );
+        assert!(
+            span.get(
+                opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_EXCLUSIVE_START_TABLE
+            )
+            .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_batch_get_item_input — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_batch_get_item_input_table_names() {
+        use aws_sdk_dynamodb::operation::batch_get_item::BatchGetItemInput;
+        use aws_sdk_dynamodb::types::{AttributeValue, KeysAndAttributes};
+
+        let key_map = {
+            let mut m = std::collections::HashMap::new();
+            m.insert("pk".to_string(), AttributeValue::S("v".to_string()));
+            m
+        };
+        let keys_and_attrs = KeysAndAttributes::builder()
+            .keys(key_map.clone())
+            .build()
+            .unwrap();
+        let keys_and_attrs2 = KeysAndAttributes::builder().keys(key_map).build().unwrap();
+        let sdk_input = BatchGetItemInput::builder()
+            .request_items("table-alpha", keys_and_attrs)
+            .request_items("table-beta", keys_and_attrs2)
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_batch_get_item_input(&input, &mut span);
+
+        let val = span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
+        assert!(val.is_some());
+        if let Value::Array(opentelemetry::Array::String(names)) = val.unwrap() {
+            assert_eq!(names.len(), 2);
+            let name_strs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+            assert!(name_strs.contains(&"table-alpha"));
+            assert!(name_strs.contains(&"table-beta"));
+        } else {
+            panic!("expected Array::String");
+        }
+    }
+
+    #[test]
+    fn extract_batch_get_item_input_empty() {
+        use aws_sdk_dynamodb::operation::batch_get_item::BatchGetItemInput;
+
+        let sdk_input = BatchGetItemInput::builder().build().unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_batch_get_item_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_transact_write_items_input — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_transact_write_items_input_all_variants() {
+        use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput;
+        use aws_sdk_dynamodb::types::{
+            AttributeValue, ConditionCheck, Delete, Put, TransactWriteItem, Update,
+        };
+
+        let key_val = AttributeValue::S("pk-value".to_string());
+
+        let condition_check = ConditionCheck::builder()
+            .table_name("table-condition")
+            .key("pk", key_val.clone())
+            .condition_expression("attribute_exists(pk)")
+            .build()
+            .unwrap();
+        let put = Put::builder()
+            .table_name("table-put")
+            .item("pk", key_val.clone())
+            .build()
+            .unwrap();
+        let delete = Delete::builder()
+            .table_name("table-delete")
+            .key("pk", key_val.clone())
+            .build()
+            .unwrap();
+        let update = Update::builder()
+            .table_name("table-update")
+            .key("pk", key_val)
+            .update_expression("SET #s = :s")
+            .build()
+            .unwrap();
+
+        let sdk_input = TransactWriteItemsInput::builder()
+            .transact_items(
+                TransactWriteItem::builder()
+                    .condition_check(condition_check)
+                    .build(),
+            )
+            .transact_items(TransactWriteItem::builder().put(put).build())
+            .transact_items(TransactWriteItem::builder().delete(delete).build())
+            .transact_items(TransactWriteItem::builder().update(update).build())
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_transact_write_items_input(&input, &mut span);
+
+        let val = span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
+        assert!(val.is_some());
+        if let Value::Array(opentelemetry::Array::String(names)) = val.unwrap() {
+            // BTreeSet deduplicates and sorts, so we get 4 unique table names
+            assert_eq!(names.len(), 4);
+            let name_strs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+            assert!(name_strs.contains(&"table-condition"));
+            assert!(name_strs.contains(&"table-put"));
+            assert!(name_strs.contains(&"table-delete"));
+            assert!(name_strs.contains(&"table-update"));
+        } else {
+            panic!("expected Array::String");
+        }
+    }
+
+    #[test]
+    fn extract_transact_write_items_input_empty() {
+        use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput;
+
+        let sdk_input = TransactWriteItemsInput::builder().build().unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_transact_write_items_input(&input, &mut span);
+
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_query_output — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_query_output_with_capacity() {
+        use aws_sdk_dynamodb::operation::query::QueryOutput;
+
+        let cc = types::ConsumedCapacity::builder()
+            .table_name("orders")
+            .capacity_units(3.0)
+            .build();
+        let sdk_output = QueryOutput::builder()
+            .count(42)
+            .scanned_count(100)
+            .consumed_capacity(cc)
+            .build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+
+        extract_query_output(&output, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_COUNT),
+            Some(&Value::I64(42))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SCANNED_COUNT),
+            Some(&Value::I64(100))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn extract_query_output_no_capacity() {
+        use aws_sdk_dynamodb::operation::query::QueryOutput;
+
+        let sdk_output = QueryOutput::builder().count(5).scanned_count(5).build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+
+        extract_query_output(&output, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_COUNT),
+            Some(&Value::I64(5))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SCANNED_COUNT),
+            Some(&Value::I64(5))
+        );
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_list_tables_output — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_list_tables_output_count() {
+        use aws_sdk_dynamodb::operation::list_tables::ListTablesOutput;
+
+        let sdk_output = ListTablesOutput::builder()
+            .table_names("table-a")
+            .table_names("table-b")
+            .table_names("table-c")
+            .build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+
+        extract_list_tables_output(&output, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_COUNT),
+            Some(&Value::I64(3))
+        );
+    }
+
+    #[test]
+    fn extract_list_tables_output_empty() {
+        use aws_sdk_dynamodb::operation::list_tables::ListTablesOutput;
+
+        let sdk_output = ListTablesOutput::builder().build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+
+        extract_list_tables_output(&output, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_COUNT),
+            Some(&Value::I64(0))
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // DynamoDBExtractor::extract_input dispatch — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn dynamodb_extractor_extract_input_known_operation() {
+        use aws_sdk_dynamodb::operation::put_item::PutItemInput;
+
+        let sdk_input = PutItemInput::builder()
+            .table_name("orders")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+        let extractor = DynamoDBExtractor::new();
+
+        extractor.extract_input("DynamoDB", "PutItem", &input, &mut span);
+
+        // db.system.name is always set
+        assert_eq!(
+            span.get(crate::interceptor::DB_SYSTEM_NAME),
+            Some(&Value::String("aws.dynamodb".into()))
+        );
+        // table_names is set for PutItem
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn dynamodb_extractor_extract_input_unknown_operation() {
+        use aws_sdk_dynamodb::operation::put_item::PutItemInput;
+
+        // For an unknown operation, only db.system.name is set; no downcast happens
+        // because the _ arm is taken. We wrap a real SDK type but use an operation
+        // name that doesn't match any arm.
+        let sdk_input = PutItemInput::builder()
+            .table_name("orders")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+        let extractor = DynamoDBExtractor::new();
+
+        extractor.extract_input("DynamoDB", "UnknownOperation", &input, &mut span);
+
+        // db.system.name is always set
+        assert_eq!(
+            span.get(crate::interceptor::DB_SYSTEM_NAME),
+            Some(&Value::String("aws.dynamodb".into()))
+        );
+        // No table_names for unknown operation
+        assert!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
+                .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // DynamoDBExtractor::extract_output dispatch — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn dynamodb_extractor_extract_output_query() {
+        use aws_sdk_dynamodb::operation::query::QueryOutput;
+
+        let sdk_output = QueryOutput::builder().count(7).scanned_count(15).build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        let extractor = DynamoDBExtractor::new();
+
+        extractor.extract_output("DynamoDB", "Query", &output, &mut span);
+
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_COUNT),
+            Some(&Value::I64(7))
+        );
+        assert_eq!(
+            span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_SCANNED_COUNT),
+            Some(&Value::I64(15))
+        );
+    }
+
+    #[test]
+    fn dynamodb_extractor_extract_output_unknown_operation() {
+        use aws_sdk_dynamodb::operation::query::QueryOutput;
+
+        // For an unknown operation, the _ arm is taken and no attributes are set.
+        // We wrap a real SDK type but use an operation name that doesn't match any arm.
+        let sdk_output = QueryOutput::builder().count(99).scanned_count(99).build();
+        let output = context::Output::erase(sdk_output);
+        let mut span = TestSpan::new();
+        let extractor = DynamoDBExtractor::new();
+
+        extractor.extract_output("DynamoDB", "UnknownOperation", &output, &mut span);
+
+        // No attributes set for unknown operation
+        assert!(span.attributes.is_empty());
+    }
+}

@@ -903,3 +903,39 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // Tests for ServiceFilter::is_match — 2 consolidated tests
+    #[test]
+    fn service_filter_is_match_matches() {
+        // All matches any service and operation
+        assert!(ServiceFilter::All.is_match("DynamoDB", "GetItem"));
+        assert!(ServiceFilter::All.is_match("S3", "PutObject"));
+        assert!(ServiceFilter::All.is_match("", ""));
+        // Service matches same service name (exact case)
+        assert!(ServiceFilter::Service("DynamoDB").is_match("DynamoDB", "GetItem"));
+        // Service matches same service name (case-insensitive)
+        assert!(ServiceFilter::Service("DynamoDB").is_match("dynamodb", "GetItem"));
+        assert!(ServiceFilter::Service("dynamodb").is_match("DynamoDB", "PutItem"));
+        assert!(ServiceFilter::Service("DYNAMODB").is_match("dynamodb", "Query"));
+        // Operation matches same service and operation (exact case)
+        assert!(ServiceFilter::Operation("DynamoDB", "GetItem").is_match("DynamoDB", "GetItem"));
+        // Operation matches same service and operation (case-insensitive)
+        assert!(ServiceFilter::Operation("DynamoDB", "GetItem").is_match("dynamodb", "getitem"));
+        assert!(ServiceFilter::Operation("s3", "putobject").is_match("S3", "PutObject"));
+    }
+    #[test]
+    fn service_filter_is_match_no_match() {
+        // Service does not match a different service
+        assert!(!ServiceFilter::Service("DynamoDB").is_match("S3", "GetItem"));
+        assert!(!ServiceFilter::Service("DynamoDB").is_match("SQS", "SendMessage"));
+        // Operation does not match a different service (same operation)
+        assert!(!ServiceFilter::Operation("DynamoDB", "GetItem").is_match("S3", "GetItem"));
+        // Operation does not match a different operation (same service)
+        assert!(!ServiceFilter::Operation("DynamoDB", "GetItem").is_match("DynamoDB", "PutItem"));
+        // Operation does not match when both service and operation differ
+        assert!(!ServiceFilter::Operation("DynamoDB", "GetItem").is_match("S3", "PutObject"));
+    }
+}
