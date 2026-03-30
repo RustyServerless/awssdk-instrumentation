@@ -1,3 +1,31 @@
+//! SQS attribute extraction following OTel semantic conventions.
+//!
+//! This module provides [`SQSExtractor`], which implements
+//! [`super::super::AttributeExtractor`] for SQS SDK calls. It is automatically
+//! used by [`super::super::DefaultExtractor`] when the `extract-sqs` feature is
+//! enabled.
+//!
+//! ## Extracted attributes
+//!
+//! Attributes follow the
+//! [OTel Messaging semconv](https://opentelemetry.io/docs/specs/semconv/messaging/):
+//!
+//! **Always set for every SQS operation:**
+//! - `messaging.system` = `"aws_sqs"`
+//! - `messaging.operation.name` — the SDK operation name (e.g. `"SendMessage"`)
+//!
+//! **Set when a clear mapping exists:**
+//! - `messaging.operation.type` — `"send"` for `SendMessage`/`SendMessageBatch`,
+//!   `"receive"` for `ReceiveMessage`, `"settle"` for delete/visibility operations
+//!
+//! **Set for operations that target a specific queue:**
+//! - `aws.sqs.queue.url` — the full queue URL
+//! - `messaging.destination.name` — the queue name (last path segment of the URL)
+//!
+//! **Set from output:**
+//! - `messaging.message.id` — for `SendMessage`
+//! - `messaging.batch.message_count` — for `SendMessageBatch` and `ReceiveMessage`
+
 // SQS attribute extraction — downcasts Input/Output to concrete
 // aws-sdk-sqs types and extracts queue URL, messaging attributes, etc.
 
@@ -28,17 +56,41 @@ use super::super::{AttributeExtractor, SpanWrite};
 /// The well-known `messaging.system` value for Amazon SQS.
 const MESSAGING_SYSTEM_VALUE: &str = "aws_sqs";
 
+/// Attribute extractor for SQS SDK calls.
+///
+/// `SQSExtractor` implements [`AttributeExtractor`] and is automatically used
+/// by [`DefaultExtractor`] when the `extract-sqs` feature is enabled. You only
+/// need to construct it directly if you are composing a custom extraction
+/// pipeline.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes.
+///
+/// [`DefaultExtractor`]: crate::interceptor::DefaultExtractor
 #[derive(Debug, Default)]
 pub struct SQSExtractor {
     _private: (),
 }
 
 impl SQSExtractor {
+    /// Creates a new `SQSExtractor`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use awssdk_instrumentation::interceptor::extract::sqs::SQSExtractor;
+    ///
+    /// let extractor = SQSExtractor::new();
+    /// ```
     pub fn new() -> Self {
         Self { _private: () }
     }
 }
 
+/// Extracts SQS-specific OTel attributes from SDK inputs and outputs.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes and which operations they apply to.
 impl<SW: SpanWrite> AttributeExtractor<SW> for SQSExtractor {
     fn extract_input(
         &self,

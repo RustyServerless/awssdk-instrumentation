@@ -1,8 +1,11 @@
+//! [`SpanWrite`] implementation for the `tracing` backend.
+
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::{SpanWrite, Status, Value};
 
+/// [`SpanWrite`] impl for `tracing::Span`, delegating to [`OpenTelemetrySpanExt`].
 impl SpanWrite for Span {
     fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
         OpenTelemetrySpanExt::set_attribute(self, key, value);

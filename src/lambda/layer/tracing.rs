@@ -1,4 +1,4 @@
-// Tracing backend
+//! Tracing-backend [`Instrumentor`] implementation for Lambda invocation spans.
 
 use opentelemetry::trace::{SpanContext, TraceContextExt, TraceState};
 use opentelemetry_semantic_conventions::attribute as semco;
@@ -10,17 +10,35 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::{InstrumentedFuture, Instrumentor, utils::XRayTraceHeader};
 
+/// [`Instrumentor`] implementation for the `tracing-backend` feature.
+///
+/// `TracingInstrumentor` creates a `tracing::info_span!` named
+/// `"Lambda runtime invoke"` for each invocation and stores it in a
+/// Tokio task-local so that [`Instrumentor::with_invocation_span`] can
+/// access it from child tasks.
+///
+/// The X-Ray trace context (when present) is set as the OTel parent of the
+/// span via `tracing-opentelemetry`'s [`OpenTelemetrySpanExt::set_parent`].
+///
+/// This type is re-exported as [`DefaultInstrumentor`] when `tracing-backend`
+/// is the active backend.
+///
+/// [`DefaultInstrumentor`]: crate::lambda::layer::DefaultInstrumentor
+/// [`OpenTelemetrySpanExt::set_parent`]: tracing_opentelemetry::OpenTelemetrySpanExt::set_parent
 #[derive(Debug, Clone)]
 pub struct TracingInstrumentor;
 
+/// [`InstrumentedFuture`] impl for `tracing`'s [`Instrumented`] wrapper.
 impl<Fut: Future> InstrumentedFuture for Instrumented<Fut> {
     type Fut = Self;
 }
 
 tokio::task_local! {
+    /// Task-local holding the current Lambda invocation's tracing span.
     static INVOCATION_SPAN: Span;
 }
 
+/// Implements [`Instrumentor`] for the `tracing-backend` feature.
 impl Instrumentor for TracingInstrumentor {
     type IFut<F: Future> = Instrumented<TaskLocalFuture<Span, F>>;
     type InvocationSpan = Span;

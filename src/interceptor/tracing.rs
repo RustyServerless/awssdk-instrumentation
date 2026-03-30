@@ -1,3 +1,16 @@
+//! `tracing`-backend interceptor (`tracing-backend` feature).
+//!
+//! [`TracingInterceptor`] implements the AWS SDK `Intercept` trait by writing
+//! span attributes into the active `tracing::Span`. The `tracing-opentelemetry`
+//! bridge then forwards those attributes to the configured OTel exporter.
+//!
+//! This is the recommended backend for most workloads. It integrates naturally
+//! with the `tracing` ecosystem and allows mixing AWS SDK spans with application
+//! spans in the same trace.
+//!
+//! [`TracingInterceptor`] is re-exported as [`super::DefaultInterceptor`] when
+//! `tracing-backend` is the active backend.
+
 // Tracing backend — TracingSpanWriter wrapping a tracing::Span,
 // and TracingInterceptor implementing the Intercept trait.
 
@@ -24,20 +37,83 @@ use super::{
     utils::{SpanPauser, StorableOption},
 };
 
-// Intercept implementation using the tracing backend.
+/// AWS SDK interceptor that writes OTel attributes into the active `tracing::Span`.
+///
+/// `TracingInterceptor` implements the AWS SDK [`Intercept`] trait and hooks
+/// into the four SDK lifecycle phases (before serialization, after serialization,
+/// before deserialization, after execution) to extract OTel semantic-convention
+/// attributes from each SDK call.
+///
+/// Attributes are written to the `tracing::Span` that the AWS SDK creates for
+/// the operation. The `tracing-opentelemetry` bridge then forwards those
+/// attributes to the configured OTel exporter.
+///
+/// This is the recommended backend for most workloads. It integrates naturally
+/// with the `tracing` ecosystem and allows mixing AWS SDK spans with application
+/// spans in the same trace.
+///
+/// `TracingInterceptor` is re-exported as [`super::DefaultInterceptor`] when
+/// `tracing-backend` is the active backend.
+///
+/// The `extractor` field is public so you can register custom hooks and
+/// extractors before attaching the interceptor to a client config.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn example() {
+/// use awssdk_instrumentation::{
+///     interceptor::{
+///         tracing::TracingInterceptor, ServiceFilter
+///     },
+///     span_write::SpanWrite,
+/// };
+///
+/// let mut interceptor = TracingInterceptor::new();
+///
+/// // Log the table name for every DynamoDB GetItem call.
+/// interceptor.extractor.register_input_hook(
+///     ServiceFilter::Operation("DynamoDB", "GetItem"),
+///     |_service, _operation, _input, span| {
+///         span.set_attribute("app.table", "orders");
+///     },
+/// );
+///
+/// // Attach to an AWS SDK client config:
+/// let dynamo_config = aws_sdk_dynamodb::config::Builder::from(&::aws_config::load_from_env().await)
+///     .interceptor(interceptor)
+///     .build();
+/// # }
+/// ```
+///
+/// [`Intercept`]: aws_smithy_runtime_api::client::interceptors::Intercept
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct TracingInterceptor {
+    /// The attribute extractor used by this interceptor.
+    ///
+    /// Register custom hooks and extractors on this field before attaching the
+    /// interceptor to an AWS SDK client config.
     pub extractor: DefaultExtractor<Span>,
 }
 
 impl Default for TracingInterceptor {
+    /// Creates a `TracingInterceptor` with no custom hooks or extractors.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl TracingInterceptor {
+    /// Creates a new `TracingInterceptor` with no custom hooks or extractors.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use awssdk_instrumentation::interceptor::tracing::TracingInterceptor;
+    ///
+    /// let interceptor = TracingInterceptor::new();
+    /// ```
     pub fn new() -> Self {
         Self {
             extractor: DefaultExtractor::new(),
@@ -45,6 +121,10 @@ impl TracingInterceptor {
     }
 }
 
+/// Implements the AWS SDK [`Intercept`] trait, hooking into the four SDK
+/// lifecycle phases to extract OTel attributes from each SDK call.
+///
+/// [`Intercept`]: aws_smithy_runtime_api::client::interceptors::Intercept
 impl Intercept for TracingInterceptor {
     fn name(&self) -> &'static str {
         "TracingInterceptor"

@@ -1,3 +1,25 @@
+//! Lambda resource detector (`env-lambda` feature).
+//!
+//! Reads standard Lambda environment variables and returns an OTel [`Resource`]
+//! with the following attributes (when the corresponding variable is set):
+//!
+//! | OTel attribute              | Source environment variable              |
+//! |-----------------------------|------------------------------------------|
+//! | `cloud.provider`            | hardcoded `"aws"`                        |
+//! | `telemetry.distro.name`     | crate name (compile-time)                |
+//! | `telemetry.distro.version`  | crate version (compile-time)             |
+//! | `cloud.region`              | `AWS_REGION`                             |
+//! | `faas.name` / `service.name`| `AWS_LAMBDA_FUNCTION_NAME`               |
+//! | `faas.version`              | `AWS_LAMBDA_FUNCTION_VERSION`            |
+//! | `faas.max_memory`           | `AWS_LAMBDA_FUNCTION_MEMORY_SIZE` (bytes)|
+//! | `faas.instance`             | `AWS_LAMBDA_LOG_STREAM_NAME`             |
+//!
+//! Detection succeeds only when `AWS_LAMBDA_FUNCTION_NAME` is set. If the
+//! variable is absent, [`lambda_resource()`] returns `None` and
+//! [`super::default_resource()`] falls through to the next detector.
+//!
+//! [`Resource`]: opentelemetry_sdk::Resource
+
 // Lambda ResourceDetector — populates OTel Resource with function name,
 // version, memory size, log group, log stream, etc.
 
@@ -6,6 +28,29 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_semantic_conventions::attribute as semco;
 use std::env;
 
+/// Builds an OTel [`Resource`] from Lambda environment variables.
+///
+/// Returns `Some(Resource)` when `AWS_LAMBDA_FUNCTION_NAME` is set (i.e. the
+/// process is running inside a Lambda execution environment), or `None`
+/// otherwise.
+///
+/// The `xray_display_handler_as_lambda` parameter controls whether
+/// `cloud.platform = "aws_lambda"` is included in the resource. When `true`,
+/// X-Ray displays the handler node with a Lambda icon. The default pipeline
+/// passes `false` to match the behaviour of the Python ADOT auto-instrumentation.
+///
+/// See the [module-level documentation](self) for the full attribute table.
+///
+/// # Examples
+///
+/// ```no_run
+/// use awssdk_instrumentation::env::lambda::lambda_resource;
+///
+/// // Returns None when not running in Lambda.
+/// let resource = lambda_resource(false);
+/// ```
+///
+/// [`Resource`]: opentelemetry_sdk::Resource
 pub fn lambda_resource(xray_display_handler_as_lambda: bool) -> Option<Resource> {
     // Check if we're actually running in Lambda
     let function_name = std::env::var("AWS_LAMBDA_FUNCTION_NAME").ok()?;

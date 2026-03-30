@@ -1,4 +1,4 @@
-// OTel-native backend
+//! OTel-native backend [`Instrumentor`] implementation for Lambda invocation spans.
 
 use std::{env, mem::ManuallyDrop, pin::Pin, task};
 
@@ -13,9 +13,35 @@ use tokio::task::futures::TaskLocalFuture;
 
 use super::{InstrumentedFuture, Instrumentor, utils::XRayTraceHeader};
 
+/// [`Instrumentor`] implementation for the `otel-backend` feature.
+///
+/// `OtelInstrumentor` creates an OTel `SERVER`-kind span directly via the
+/// global OTel tracer for each Lambda invocation. The span is named after the
+/// Lambda function (`AWS_LAMBDA_FUNCTION_NAME`) and carries the standard FaaS
+/// attributes.
+///
+/// The invocation OTel [`Context`] is stored in a Tokio task-local so that
+/// [`Instrumentor::with_invocation_span`] can access it from child tasks.
+///
+/// This type is re-exported as [`DefaultInstrumentor`] when `otel-backend` is
+/// the only active backend.
+///
+/// [`DefaultInstrumentor`]: crate::lambda::layer::DefaultInstrumentor
 #[derive(Debug, Clone)]
 pub struct OtelInstrumentor;
 
+/// A pinned future that attaches an OTel [`Context`] on every poll and ends
+/// the invocation span when dropped.
+///
+/// `OtelInstrumentedFuture` is the [`InstrumentedFuture`] type produced by
+/// [`OtelInstrumentor::instrument`]. It wraps the inner future and:
+///
+/// - Attaches the invocation [`Context`] as the current OTel context on every
+///   `poll`, so child spans created during the invocation are correctly parented.
+/// - Ends the invocation span (by dropping the [`Context`]) in its `Drop` impl,
+///   ensuring the span is closed even when the future is cancelled.
+///
+/// You do not construct this type directly.
 #[pin_project(PinnedDrop)]
 pub struct OtelInstrumentedFuture<Fut: Future> {
     #[pin]
@@ -23,6 +49,7 @@ pub struct OtelInstrumentedFuture<Fut: Future> {
     ctx: Context,
 }
 
+/// Polls the inner future with the invocation OTel context attached.
 impl<Fut: Future> Future for OtelInstrumentedFuture<Fut> {
     type Output = Fut::Output;
 
@@ -54,13 +81,17 @@ impl<Fut: Future> PinnedDrop for OtelInstrumentedFuture<Fut> {
     }
 }
 
+/// Marks [`OtelInstrumentedFuture`] as an instrumented future.
 impl<Fut: Future> InstrumentedFuture for OtelInstrumentedFuture<Fut> {
     type Fut = Self;
 }
 
 tokio::task_local! {
+    /// Task-local holding the OTel [`Context`] for the current Lambda invocation.
     static INVOCATION_CTX: Context;
 }
+
+/// Implements [`Instrumentor`] for the `otel-backend` feature.
 impl Instrumentor for OtelInstrumentor {
     type IFut<F: Future> = OtelInstrumentedFuture<TaskLocalFuture<Context, F>>;
     type InvocationSpan = Context;

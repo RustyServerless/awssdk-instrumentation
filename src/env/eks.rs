@@ -1,3 +1,22 @@
+//! EKS resource detector (`env-eks` feature).
+//!
+//! Detects an EKS environment by checking for the Kubernetes service-account
+//! namespace file (`/var/run/secrets/kubernetes.io/serviceaccount/namespace`).
+//! When present, it returns an OTel [`Resource`] with the following attributes:
+//!
+//! | OTel attribute          | Source                                          |
+//! |-------------------------|-------------------------------------------------|
+//! | `cloud.provider`        | hardcoded `"aws"`                               |
+//! | `cloud.platform`        | hardcoded `"aws_eks"`                           |
+//! | `k8s.namespace.name`    | service-account namespace file                  |
+//! | `k8s.pod.name`          | `HOSTNAME` environment variable                 |
+//! | `k8s.cluster.name`      | `AWS_CLUSTER_NAME` environment variable         |
+//! | `container.id`          | Docker container ID from `/proc/1/cgroup`       |
+//! | `cloud.region`          | IMDSv2 `placement/region`, fallback `AWS_REGION`|
+//! | `cloud.account.id`      | IMDSv2 identity credentials, fallback `AWS_ACCOUNT_ID` |
+//!
+//! [`Resource`]: opentelemetry_sdk::Resource
+
 // EKS ResourceDetector — populates OTel Resource with cluster name,
 // pod, namespace, etc.
 
@@ -7,6 +26,28 @@ use opentelemetry_semantic_conventions::attribute as semco;
 
 use super::imds::ImdsClient;
 
+/// Builds an OTel [`Resource`] for an EKS environment.
+///
+/// Returns `Some(Resource)` when the Kubernetes service-account namespace file
+/// (`/var/run/secrets/kubernetes.io/serviceaccount/namespace`) exists, or
+/// `None` otherwise.
+///
+/// When detection succeeds, the function queries IMDSv2 for the AWS region and
+/// account ID, falling back to the `AWS_REGION` and `AWS_ACCOUNT_ID`
+/// environment variables if IMDS is unreachable.
+///
+/// See the [module-level documentation](self) for the full attribute table.
+///
+/// # Examples
+///
+/// ```no_run
+/// use awssdk_instrumentation::env::eks::eks_resource;
+///
+/// // Returns None when not running in EKS.
+/// let resource = eks_resource();
+/// ```
+///
+/// [`Resource`]: opentelemetry_sdk::Resource
 pub fn eks_resource() -> Option<Resource> {
     if !running_in_k8s() {
         return None;
@@ -58,10 +99,12 @@ pub fn eks_resource() -> Option<Resource> {
     )
 }
 
+/// Returns `true` if the Kubernetes service-account namespace file is present.
 fn running_in_k8s() -> bool {
     std::path::Path::new("/var/run/secrets/kubernetes.io/serviceaccount/namespace").exists()
 }
 
+/// Reads the Docker container ID from `/proc/1/cgroup` by looking for a `docker/` path segment.
 fn get_container_id() -> Option<String> {
     if let Ok(content) = std::fs::read_to_string("/proc/1/cgroup") {
         for line in content.lines() {
@@ -75,6 +118,7 @@ fn get_container_id() -> Option<String> {
     None
 }
 
+/// Deserialization target for the IMDSv2 `identity-credentials/ec2/info` JSON response.
 #[derive(serde::Deserialize)]
 struct Ec2IdentityCredentials {
     #[serde(rename = "AccountId")]

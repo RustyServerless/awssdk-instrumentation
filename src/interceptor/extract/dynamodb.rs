@@ -1,3 +1,43 @@
+//! DynamoDB attribute extraction following OTel semantic conventions.
+//!
+//! This module provides [`DynamoDBExtractor`], which implements
+//! [`super::super::AttributeExtractor`] for DynamoDB SDK calls. It is
+//! automatically used by [`super::super::DefaultExtractor`] when the
+//! `extract-dynamodb` feature is enabled.
+//!
+//! ## Extracted attributes
+//!
+//! **Always set:**
+//! - `db.system.name` = `"aws.dynamodb"`
+//!
+//! **Per-operation input attributes** (a subset of the
+//! [OTel DynamoDB semconv](https://opentelemetry.io/docs/specs/semconv/db/dynamodb/)):
+//! - `aws.dynamodb.table_names` — for all single-table and multi-table operations
+//! - `aws.dynamodb.consistent_read`, `aws.dynamodb.projection`,
+//!   `aws.dynamodb.index_name`, `aws.dynamodb.select`, `aws.dynamodb.limit`,
+//!   `aws.dynamodb.attributes_to_get` — for `GetItem`, `Query`, `Scan`
+//! - `aws.dynamodb.scan_forward` — for `Query`
+//! - `aws.dynamodb.segment`, `aws.dynamodb.total_segments` — for `Scan`
+//! - `aws.dynamodb.provisioned_read_capacity`,
+//!   `aws.dynamodb.provisioned_write_capacity` — for `CreateTable`, `UpdateTable`
+//! - `aws.dynamodb.exclusive_start_table` — for `ListTables`
+//!
+//! **Per-operation output attributes:**
+//! - `aws.dynamodb.count`, `aws.dynamodb.scanned_count` — for `Query`, `Scan`
+//! - `aws.dynamodb.table_count` — for `ListTables`
+//! - `aws.dynamodb.consumed_capacity` (JSON array) — for all operations that
+//!   return `ConsumedCapacity`
+//!
+//! ## Deferred attributes
+//!
+//! The following semconv attributes are not yet extracted because the AWS SDK
+//! model types do not implement `serde::Serialize`:
+//! - `aws.dynamodb.item_collection_metrics`
+//! - `aws.dynamodb.global_secondary_indexes`
+//! - `aws.dynamodb.local_secondary_indexes`
+//! - `aws.dynamodb.attribute_definitions`
+//! - `aws.dynamodb.global_secondary_index_updates`
+
 // DynamoDB attribute extraction — downcasts Input/Output to concrete
 // aws-sdk-dynamodb types and extracts table name, consumed capacity, etc.
 //
@@ -53,17 +93,41 @@ use serde::ser::{SerializeMap, Serializer};
 
 use super::super::{AttributeExtractor, SpanWrite};
 
+/// Attribute extractor for DynamoDB SDK calls.
+///
+/// `DynamoDBExtractor` implements [`AttributeExtractor`] and is automatically
+/// used by [`DefaultExtractor`] when the `extract-dynamodb` feature is enabled.
+/// You only need to construct it directly if you are composing a custom
+/// extraction pipeline.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes.
+///
+/// [`DefaultExtractor`]: crate::interceptor::DefaultExtractor
 #[derive(Debug, Default)]
 pub struct DynamoDBExtractor {
     _private: (),
 }
 
 impl DynamoDBExtractor {
+    /// Creates a new `DynamoDBExtractor`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use awssdk_instrumentation::interceptor::extract::dynamodb::DynamoDBExtractor;
+    ///
+    /// let extractor = DynamoDBExtractor::new();
+    /// ```
     pub fn new() -> Self {
         Self { _private: () }
     }
 }
 
+/// Extracts DynamoDB-specific OTel attributes from SDK inputs and outputs.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes and which operations they apply to.
 impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
     fn extract_input(
         &self,
@@ -306,6 +370,7 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
 // Per-operation input helpers
 // ---------------------------------------------------------------------------
 
+/// Extracts input attributes for the `GetItem` operation.
 fn extract_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<GetItemInput>().expect("correct type");
     set_table_names(span, i.table_name());
@@ -313,6 +378,7 @@ fn extract_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_projection(span, i.projection_expression());
 }
 
+/// Extracts input attributes for the `Query` operation.
 fn extract_query_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<QueryInput>().expect("correct type");
     set_table_names(span, i.table_name());
@@ -327,6 +393,7 @@ fn extract_query_input(input: &context::Input, span: &mut impl SpanWrite) {
     }
 }
 
+/// Extracts input attributes for the `Scan` operation.
 fn extract_scan_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<ScanInput>().expect("correct type");
     set_table_names(span, i.table_name());
@@ -347,6 +414,7 @@ fn extract_scan_input(input: &context::Input, span: &mut impl SpanWrite) {
     }
 }
 
+/// Extracts input attributes for the `CreateTable` operation.
 fn extract_create_table_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input
         .downcast_ref::<CreateTableInput>()
@@ -355,6 +423,7 @@ fn extract_create_table_input(input: &context::Input, span: &mut impl SpanWrite)
     set_provisioned_throughput(span, i.provisioned_throughput());
 }
 
+/// Extracts input attributes for the `UpdateTable` operation.
 fn extract_update_table_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input
         .downcast_ref::<UpdateTableInput>()
@@ -363,6 +432,7 @@ fn extract_update_table_input(input: &context::Input, span: &mut impl SpanWrite)
     set_provisioned_throughput(span, i.provisioned_throughput());
 }
 
+/// Extracts input attributes for the `ListTables` operation.
 fn extract_list_tables_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input
         .downcast_ref::<ListTablesInput>()
@@ -376,6 +446,7 @@ fn extract_list_tables_input(input: &context::Input, span: &mut impl SpanWrite) 
     }
 }
 
+/// Extracts input attributes for the `BatchGetItem` operation.
 fn extract_batch_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
         span,
@@ -389,6 +460,7 @@ fn extract_batch_get_item_input(input: &context::Input, span: &mut impl SpanWrit
     );
 }
 
+/// Extracts input attributes for the `BatchWriteItem` operation.
 fn extract_batch_write_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
         span,
@@ -402,6 +474,7 @@ fn extract_batch_write_item_input(input: &context::Input, span: &mut impl SpanWr
     );
 }
 
+/// Extracts input attributes for the `TransactGetItems` operation.
 fn extract_transact_get_items_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
         span,
@@ -416,6 +489,7 @@ fn extract_transact_get_items_input(input: &context::Input, span: &mut impl Span
     );
 }
 
+/// Extracts input attributes for the `TransactWriteItems` operation.
 fn extract_transact_write_items_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
         span,
@@ -439,6 +513,7 @@ fn extract_transact_write_items_input(input: &context::Input, span: &mut impl Sp
 // Per-operation output helpers
 // ---------------------------------------------------------------------------
 
+/// Extracts output attributes for the `Query` operation.
 fn extract_query_output(output: &context::Output, span: &mut impl SpanWrite) {
     let o = output.downcast_ref::<QueryOutput>().expect("correct type");
     span.set_attribute(semco::AWS_DYNAMODB_COUNT, Value::I64(i64::from(o.count())));
@@ -449,6 +524,7 @@ fn extract_query_output(output: &context::Output, span: &mut impl SpanWrite) {
     set_consumed_capacity_opt(span, o.consumed_capacity());
 }
 
+/// Extracts output attributes for the `Scan` operation.
 fn extract_scan_output(output: &context::Output, span: &mut impl SpanWrite) {
     let o = output.downcast_ref::<ScanOutput>().expect("correct type");
     span.set_attribute(semco::AWS_DYNAMODB_COUNT, Value::I64(i64::from(o.count())));
@@ -459,6 +535,7 @@ fn extract_scan_output(output: &context::Output, span: &mut impl SpanWrite) {
     set_consumed_capacity_opt(span, o.consumed_capacity());
 }
 
+/// Extracts output attributes for the `ListTables` operation.
 fn extract_list_tables_output(output: &context::Output, span: &mut impl SpanWrite) {
     let o = output
         .downcast_ref::<ListTablesOutput>()
@@ -473,6 +550,7 @@ fn extract_list_tables_output(output: &context::Output, span: &mut impl SpanWrit
 // Shared attribute helpers
 // ---------------------------------------------------------------------------
 
+/// Sets the `aws.dynamodb.table_names` attribute from an iterator of table name strings.
 fn set_table_names<'a>(span: &mut impl SpanWrite, table_names: impl IntoIterator<Item = &'a str>) {
     let table_names = table_names
         .into_iter()
@@ -486,36 +564,42 @@ fn set_table_names<'a>(span: &mut impl SpanWrite, table_names: impl IntoIterator
     }
 }
 
+/// Sets the `aws.dynamodb.consistent_read` attribute if present.
 fn set_consistent_read(span: &mut impl SpanWrite, consistent_read: Option<bool>) {
     if let Some(consistent_read) = consistent_read {
         span.set_attribute(semco::AWS_DYNAMODB_CONSISTENT_READ, consistent_read);
     }
 }
 
+/// Sets the `aws.dynamodb.projection` attribute if present.
 fn set_projection(span: &mut impl SpanWrite, projection_expression: Option<&str>) {
     if let Some(projection) = projection_expression {
         span.set_attribute(semco::AWS_DYNAMODB_PROJECTION, projection.to_owned());
     }
 }
 
+/// Sets the `aws.dynamodb.index_name` attribute if present.
 fn set_index_name(span: &mut impl SpanWrite, index_name: Option<&str>) {
     if let Some(index_name) = index_name {
         span.set_attribute(semco::AWS_DYNAMODB_INDEX_NAME, index_name.to_owned());
     }
 }
 
+/// Sets the `aws.dynamodb.select` attribute if present.
 fn set_select(span: &mut impl SpanWrite, select: Option<&aws_sdk_dynamodb::types::Select>) {
     if let Some(select) = select {
         span.set_attribute(semco::AWS_DYNAMODB_SELECT, select.as_str().to_owned());
     }
 }
 
+/// Sets the `aws.dynamodb.limit` attribute if present.
 fn set_limit(span: &mut impl SpanWrite, limit: Option<i32>) {
     if let Some(limit) = limit {
         span.set_attribute(semco::AWS_DYNAMODB_LIMIT, Value::I64(i64::from(limit)));
     }
 }
 
+/// Sets the `aws.dynamodb.attributes_to_get` attribute if the list is non-empty.
 fn set_attributes_to_get(span: &mut impl SpanWrite, attributes: &[String]) {
     if !attributes.is_empty() {
         span.set_attribute(
@@ -530,6 +614,7 @@ fn set_attributes_to_get(span: &mut impl SpanWrite, attributes: &[String]) {
     }
 }
 
+/// Sets the `aws.dynamodb.provisioned_read_capacity` and `aws.dynamodb.provisioned_write_capacity` attributes if present.
 fn set_provisioned_throughput(
     span: &mut impl SpanWrite,
     throughput: Option<&aws_sdk_dynamodb::types::ProvisionedThroughput>,
@@ -554,8 +639,8 @@ fn set_provisioned_throughput(
 // newtype wrappers with custom `Serialize` impls so we can call
 // `serde_json::to_string` and get the JSON format expected by the semconv.
 
-// Sets the `aws.dynamodb.consumed_capacity` attribute from a single optional
-// `ConsumedCapacity` value (GetItem, PutItem, DeleteItem, UpdateItem, Query, Scan).
+/// Sets the `aws.dynamodb.consumed_capacity` attribute from a single optional `ConsumedCapacity`
+/// value (used by `GetItem`, `PutItem`, `DeleteItem`, `UpdateItem`, `Query`, `Scan`).
 fn set_consumed_capacity_opt(span: &mut impl SpanWrite, cc: Option<&types::ConsumedCapacity>) {
     if let Some(cc) = cc {
         if let Ok(json) = serde_json::to_string(&SerConsumedCapacity(cc)) {
@@ -567,9 +652,8 @@ fn set_consumed_capacity_opt(span: &mut impl SpanWrite, cc: Option<&types::Consu
     }
 }
 
-// Sets the `aws.dynamodb.consumed_capacity` attribute from a list of
-// `ConsumedCapacity` values (BatchGetItem, BatchWriteItem, TransactGetItems,
-// TransactWriteItems).
+/// Sets the `aws.dynamodb.consumed_capacity` attribute from a list of `ConsumedCapacity` values
+/// (used by `BatchGetItem`, `BatchWriteItem`, `TransactGetItems`, `TransactWriteItems`).
 fn set_consumed_capacity_list(span: &mut impl SpanWrite, ccs: &[types::ConsumedCapacity]) {
     if !ccs.is_empty() {
         let items: Vec<StringValue> = ccs
@@ -586,9 +670,10 @@ fn set_consumed_capacity_list(span: &mut impl SpanWrite, ccs: &[types::ConsumedC
     }
 }
 
-// Newtype wrapper for `types::Capacity` that implements `Serialize`.
+/// Newtype wrapper for [`types::Capacity`] that implements [`Serialize`].
 struct SerCapacity<'a>(&'a types::Capacity);
 
+/// Serializes [`types::Capacity`] as a JSON map with only the present capacity fields.
 impl Serialize for SerCapacity<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let cap = self.0;
@@ -609,9 +694,10 @@ impl Serialize for SerCapacity<'_> {
     }
 }
 
-// Newtype wrapper for `types::ConsumedCapacity` that implements `Serialize`.
+/// Newtype wrapper for [`types::ConsumedCapacity`] that implements [`Serialize`].
 struct SerConsumedCapacity<'a>(&'a types::ConsumedCapacity);
 
+/// Serializes [`types::ConsumedCapacity`] as a JSON map matching the OTel semconv format.
 impl Serialize for SerConsumedCapacity<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let cc = self.0;
@@ -648,10 +734,10 @@ impl Serialize for SerConsumedCapacity<'_> {
     }
 }
 
-// Newtype wrapper for a `HashMap<String, Capacity>` that serializes each
-// value through `SerCapacity`.
+/// Newtype wrapper for a `HashMap<String, Capacity>` that serializes each value through [`SerCapacity`].
 struct SerCapacityMap<'a>(&'a std::collections::HashMap<String, types::Capacity>);
 
+/// Serializes a map of index names to [`types::Capacity`] values.
 impl Serialize for SerCapacityMap<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(self.0.len()))?;

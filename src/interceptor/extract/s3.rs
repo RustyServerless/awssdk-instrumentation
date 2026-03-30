@@ -1,3 +1,23 @@
+//! S3 attribute extraction following OTel semantic conventions.
+//!
+//! This module provides [`S3Extractor`], which implements
+//! [`super::super::AttributeExtractor`] for S3 SDK calls. It is automatically
+//! used by [`super::super::DefaultExtractor`] when the `extract-s3` feature is
+//! enabled.
+//!
+//! ## Extracted attributes
+//!
+//! Attributes follow the
+//! [OTel S3 semconv](https://opentelemetry.io/docs/specs/semconv/object-stores/s3/):
+//!
+//! - `aws.s3.bucket` — set for all operations that target a specific bucket
+//! - `aws.s3.key` — set for object-level operations (`GetObject`, `PutObject`,
+//!   `DeleteObject`, `HeadObject`, `CopyObject`, multipart upload operations, …)
+//! - `aws.s3.copy_source` — set for `CopyObject` and `UploadPartCopy`
+//! - `aws.s3.upload_id` — set for multipart upload operations
+//! - `aws.s3.part_number` — set for `GetObject`, `HeadObject`, `UploadPart`,
+//!   `UploadPartCopy`
+
 // S3 attribute extraction — downcasts Input/Output to concrete
 // aws-sdk-s3 types and extracts bucket name, key, etc.
 
@@ -21,17 +41,40 @@ use opentelemetry_semantic_conventions::attribute as semco;
 
 use super::super::{AttributeExtractor, SpanWrite};
 
+/// Attribute extractor for S3 SDK calls.
+///
+/// `S3Extractor` implements [`AttributeExtractor`] and is automatically used by
+/// [`DefaultExtractor`] when the `extract-s3` feature is enabled. You only need
+/// to construct it directly if you are composing a custom extraction pipeline.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes.
+///
+/// [`DefaultExtractor`]: crate::interceptor::DefaultExtractor
 #[derive(Debug, Default)]
 pub struct S3Extractor {
     _private: (),
 }
 
 impl S3Extractor {
+    /// Creates a new `S3Extractor`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use awssdk_instrumentation::interceptor::extract::s3::S3Extractor;
+    ///
+    /// let extractor = S3Extractor::new();
+    /// ```
     pub fn new() -> Self {
         Self { _private: () }
     }
 }
 
+/// Extracts S3-specific OTel attributes from SDK inputs.
+///
+/// See the [module-level documentation](self) for the full list of extracted
+/// attributes and which operations they apply to.
 impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
     fn extract_input(
         &self,
@@ -208,30 +251,35 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
     }
 }
 
+/// Sets the `aws.s3.bucket` attribute if present.
 fn set_bucket(span: &mut impl SpanWrite, bucket: Option<&str>) {
     if let Some(bucket) = bucket {
         span.set_attribute(semco::AWS_S3_BUCKET, bucket.to_owned());
     }
 }
 
+/// Sets the `aws.s3.key` attribute if present.
 fn set_key(span: &mut impl SpanWrite, key: Option<&str>) {
     if let Some(key) = key {
         span.set_attribute(semco::AWS_S3_KEY, key.to_owned());
     }
 }
 
+/// Sets the `aws.s3.copy_source` attribute if present.
 fn set_copy_source(span: &mut impl SpanWrite, copy_source: Option<&str>) {
     if let Some(copy_source) = copy_source {
         span.set_attribute(semco::AWS_S3_COPY_SOURCE, copy_source.to_owned());
     }
 }
 
+/// Sets the `aws.s3.upload_id` attribute if present.
 fn set_upload_id(span: &mut impl SpanWrite, upload_id: Option<&str>) {
     if let Some(upload_id) = upload_id {
         span.set_attribute(semco::AWS_S3_UPLOAD_ID, upload_id.to_owned());
     }
 }
 
+/// Sets the `aws.s3.part_number` attribute if present.
 fn set_part_number(span: &mut impl SpanWrite, part_number: Option<i32>) {
     if let Some(part_number) = part_number {
         span.set_attribute(

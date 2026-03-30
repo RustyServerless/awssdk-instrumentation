@@ -1,8 +1,53 @@
+//! The [`make_lambda_runtime!`] macro and its `default_flush_tracer` helper.
+//!
+//! [`make_lambda_runtime!`] generates a complete `#[tokio::main] async fn main()`
+//! that wires together telemetry initialisation, optional SDK client singletons,
+//! and the Lambda runtime with the [`super::layer::DefaultTracingLayer`] applied.
+//!
+//! ## Macro syntax
+//!
+//! ```text
+//! make_lambda_runtime!(
+//!     handler_fn
+//!     [, trigger = OTelFaasTrigger::Http]
+//!     [, telemetry_init = my_telemetry_init]
+//!     [, client_fn() -> SdkClientType]*
+//! );
+//! ```
+//!
+//! All parameters after `handler_fn` are optional:
+//!
+//! - `trigger` — sets the `faas.trigger` attribute (default: `Http`)
+//! - `telemetry_init` — custom telemetry init function with signature
+//!   `fn() -> SdkTracerProvider` (default: [`crate::init::default_telemetry_init`])
+//! - `client_fn() -> SdkClientType` — zero or more SDK client declarations;
+//!   each generates a `OnceLock`-backed accessor with
+//!   [`crate::interceptor::DefaultInterceptor`] pre-attached
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use lambda_runtime::{Error, LambdaEvent};
+//! use serde_json::Value;
+//!
+//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+//!     Ok(event.payload)
+//! }
+//!
+//! // Minimal: just the handler, defaults to Http trigger.
+//! awssdk_instrumentation::make_lambda_runtime!(handler);
+//! ```
+//!
+//! [`make_lambda_runtime!`]: crate::make_lambda_runtime
+
 // make_lambda_runtime! macro — generates main(), tracer init, instrumented
 // SDK clients, Tower layer setup, and Lambda runtime execution.
 
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
+/// Flushes the given [`SdkTracerProvider`], logging the outcome.
+///
+/// Called by the [`make_lambda_runtime!`]-generated flush closure after each invocation.
 #[doc(hidden)]
 pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
     match tracer_provider.force_flush() {
@@ -15,6 +60,79 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
     }
 }
 
+/// Generates a complete `#[tokio::main] async fn main()` for a Lambda function.
+///
+/// This macro wires together telemetry initialisation, optional AWS SDK client
+/// singletons, and the Lambda runtime with the [`DefaultTracingLayer`] applied.
+/// It is the recommended entry point for Lambda functions using this crate.
+///
+/// # Syntax
+///
+/// ```text
+/// make_lambda_runtime!(
+///     handler_fn
+///     [, trigger = OTelFaasTrigger::Variant]
+///     [, telemetry_init = my_telemetry_init_fn]
+///     [, client_fn() -> SdkClientType]*
+/// );
+/// ```
+///
+/// All parameters after `handler_fn` are optional and can appear in any order:
+///
+/// - **`handler_fn`** *(required)* — path to the async handler function.
+/// - **`trigger`** — the [`OTelFaasTrigger`] variant for the `faas.trigger`
+///   attribute. Defaults to [`OTelFaasTrigger::Http`].
+/// - **`telemetry_init`** — a custom telemetry init function with signature
+///   `fn() -> SdkTracerProvider`. Defaults to [`default_telemetry_init`].
+/// - **`client_fn() -> SdkClientType`** — zero or more SDK client declarations.
+///   Each generates a `OnceLock`-backed accessor with [`DefaultInterceptor`]
+///   pre-attached.
+///
+/// # Examples
+///
+/// Minimal usage — just the handler:
+///
+/// ```no_run
+/// use lambda_runtime::{Error, LambdaEvent};
+/// use serde_json::Value;
+///
+/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+///     Ok(event.payload)
+/// }
+///
+/// awssdk_instrumentation::make_lambda_runtime!(handler);
+/// ```
+///
+/// With a DynamoDB client and a datasource trigger:
+///
+/// ```no_run
+/// # mod private {
+/// use lambda_runtime::{Error, LambdaEvent};
+/// use serde_json::Value;
+/// use awssdk_instrumentation::lambda::OTelFaasTrigger;
+///
+/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+///     let _client = dynamodb_client();
+///     Ok(event.payload)
+/// }
+///
+/// awssdk_instrumentation::make_lambda_runtime!(
+///     handler,
+///     trigger = OTelFaasTrigger::Datasource,
+///     dynamodb_client() -> aws_sdk_dynamodb::Client
+/// );
+/// # }
+/// # fn dynamodb_client() {}
+/// # fn aws_sdk_config() {}
+/// # fn main() {}
+/// ```
+///
+/// [`DefaultTracingLayer`]: crate::lambda::layer::DefaultTracingLayer
+/// [`OTelFaasTrigger`]: crate::lambda::OTelFaasTrigger
+/// [`OTelFaasTrigger::Http`]: crate::lambda::OTelFaasTrigger::Http
+/// [`default_telemetry_init`]: crate::init::default_telemetry_init
+/// [`DefaultInterceptor`]: crate::interceptor::DefaultInterceptor
+/// [`aws_sdk_config_provider!`]: crate::aws_sdk_config_provider
 #[macro_export]
 macro_rules! make_lambda_runtime {
     (

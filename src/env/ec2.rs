@@ -1,3 +1,25 @@
+//! EC2 resource detector (`env-ec2` feature).
+//!
+//! Queries the EC2 Instance Metadata Service v2 (IMDSv2) and returns an OTel
+//! [`Resource`] with the following attributes:
+//!
+//! | OTel attribute              | IMDSv2 path                                  |
+//! |-----------------------------|----------------------------------------------|
+//! | `cloud.provider`            | hardcoded `"aws"`                            |
+//! | `cloud.platform`            | hardcoded `"aws_ec2"`                        |
+//! | `host.id`                   | `instance-id`                                |
+//! | `host.type`                 | `instance-type`                              |
+//! | `host.image.id`             | `ami-id`                                     |
+//! | `cloud.availability_zone`   | `placement/availability-zone`                |
+//! | `cloud.region`              | derived from AZ (strip trailing letter)      |
+//! | `cloud.account.id`          | `identity-credentials/ec2/info` (JSON)       |
+//!
+//! Detection succeeds only when IMDSv2 is reachable and returns an instance ID.
+//! If the IMDS call fails (e.g. not running on EC2), [`ec2_resource()`] returns
+//! `None`.
+//!
+//! [`Resource`]: opentelemetry_sdk::Resource
+
 // EC2 ResourceDetector — populates OTel Resource with instance ID,
 // AMI, availability zone, etc.
 
@@ -7,6 +29,27 @@ use opentelemetry_semantic_conventions::attribute as semco;
 
 use super::imds::ImdsClient;
 
+/// Builds an OTel [`Resource`] by querying the EC2 Instance Metadata Service v2.
+///
+/// Returns `Some(Resource)` when IMDSv2 is reachable and returns an instance
+/// ID, or `None` otherwise (e.g. when not running on EC2).
+///
+/// The region is derived from the availability zone by stripping the trailing
+/// letter (e.g. `us-east-1a` → `us-east-1`). The account ID is read from the
+/// IMDSv2 identity credentials endpoint.
+///
+/// See the [module-level documentation](self) for the full attribute table.
+///
+/// # Examples
+///
+/// ```no_run
+/// use awssdk_instrumentation::env::ec2::ec2_resource;
+///
+/// // Returns None when not running on EC2 or when IMDSv2 is unreachable.
+/// let resource = ec2_resource();
+/// ```
+///
+/// [`Resource`]: opentelemetry_sdk::Resource
 pub fn ec2_resource() -> Option<Resource> {
     let imds = ImdsClient::new()?;
 
@@ -41,6 +84,7 @@ pub fn ec2_resource() -> Option<Resource> {
     )
 }
 
+/// Deserialization target for the IMDSv2 `identity-credentials/ec2/info` JSON response.
 #[derive(serde::Deserialize)]
 struct Ec2IdentityCredentials {
     #[serde(rename = "AccountId")]

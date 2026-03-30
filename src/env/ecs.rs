@@ -1,3 +1,27 @@
+//! ECS resource detector (`env-ecs` feature).
+//!
+//! Queries the ECS container metadata endpoint and returns an OTel [`Resource`]
+//! with the following attributes (when available):
+//!
+//! | OTel attribute              | Source                                   |
+//! |-----------------------------|------------------------------------------|
+//! | `cloud.provider`            | hardcoded `"aws"`                        |
+//! | `cloud.platform`            | hardcoded `"aws_ecs"`                    |
+//! | `aws.ecs.cluster.arn`       | task metadata `Cluster`                  |
+//! | `aws.ecs.task.arn`          | task metadata `TaskARN`                  |
+//! | `cloud.region`              | derived from task ARN (4th `:` segment)  |
+//! | `cloud.account.id`          | derived from task ARN (5th `:` segment)  |
+//! | `aws.ecs.task.family`       | task metadata `Family`                   |
+//! | `aws.ecs.task.revision`     | task metadata `Revision`                 |
+//! | `aws.ecs.container.arn`     | container metadata `ContainerARN`        |
+//! | `container.id`              | container metadata `DockerId`            |
+//!
+//! Detection succeeds only when `ECS_CONTAINER_METADATA_URI_V4` is set and the
+//! metadata endpoint responds. If either condition fails, [`ecs_resource()`]
+//! returns `None`.
+//!
+//! [`Resource`]: opentelemetry_sdk::Resource
+
 // ECS ResourceDetector — populates OTel Resource with cluster, task ARN,
 // container ID, etc.
 
@@ -5,6 +29,24 @@ use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
 use opentelemetry_semantic_conventions::attribute as semco;
 
+/// Builds an OTel [`Resource`] by querying the ECS container metadata endpoint.
+///
+/// Returns `Some(Resource)` when `ECS_CONTAINER_METADATA_URI_V4` is set and
+/// the metadata endpoint responds successfully, or `None` otherwise. The HTTP
+/// request has a 2-second timeout.
+///
+/// See the [module-level documentation](self) for the full attribute table.
+///
+/// # Examples
+///
+/// ```no_run
+/// use awssdk_instrumentation::env::ecs::ecs_resource;
+///
+/// // Returns None when not running in ECS.
+/// let resource = ecs_resource();
+/// ```
+///
+/// [`Resource`]: opentelemetry_sdk::Resource
 pub fn ecs_resource() -> Option<Resource> {
     let metadata_uri = std::env::var("ECS_CONTAINER_METADATA_URI_V4").ok()?;
 
@@ -63,6 +105,7 @@ pub fn ecs_resource() -> Option<Resource> {
     )
 }
 
+/// Deserialization target for the ECS task metadata endpoint (`/task`).
 #[derive(serde::Deserialize)]
 struct EcsTaskMetadata {
     #[serde(rename = "Cluster")]
@@ -75,7 +118,7 @@ struct EcsTaskMetadata {
     revision: Option<String>,
 }
 
-// Per-container metadata (from GET $ECS_CONTAINER_METADATA_URI_V4 without /task)
+/// Deserialization target for the ECS container metadata endpoint (root path).
 #[derive(serde::Deserialize)]
 struct EcsContainerMetadata {
     #[serde(rename = "ContainerARN")]
