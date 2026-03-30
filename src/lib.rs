@@ -1,3 +1,6 @@
+#![warn(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
+#![cfg_attr(docsrs, deny(rustdoc::broken_intra_doc_links))]
 //! Out-of-the-box OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust,
 //! with first-class support for AWS Lambda.
 //!
