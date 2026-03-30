@@ -1,45 +1,83 @@
 [package]
 name = "awssdk-instrumentation"
-version = "0.0.0"
+version = "0.1.0"
 rust-version = "1.85.0"
 edition = "2024"
 authors = ["Jérémie RODON <jeremie.rodon@gmail.com>"]
 license = "MIT"
-description = "Out-of-the-box instrumentation for the AWS SDK for Rust, with special care for code running on AWS Lambda"
+description = "Out-of-the-box OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust, with first-class support for AWS Lambda"
 repository = "https://github.com/RustyServerless/awssdk-instrumentation"
 documentation = "https://docs.rs/awssdk-instrumentation"
 readme = "README.md"
 keywords = ["aws", "otel", "xray", "lambda", "serverless"]
 categories = ["development-tools::debugging"]
+exclude = [
+    ".envrc",
+    ".hooks/",
+    "scripts/",
+    ".github/",
+    "nix/",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+]
 
 [dependencies]
-# lambda_runtime = "1"
-# aws_lambda_events = "1"
-# aws-config = { version = "1.8", features = ["behavior-version-latest"] }
-# aws-smithy-runtime-api = "1"
-# aws-smithy-types = "1"
-# aws-types = "1"
-# aws-sdk-dynamodb = "1.101"
+log = "0.4"
 
-# tokio = { version = "1", features = ["macros"] }
-# pin-project = "1"
+# Core — always required
+aws-smithy-runtime-api = { version = "1", features = ["client"] }
+aws-smithy-types = "1"
+aws-types = "1"
+opentelemetry = "0.31"
+opentelemetry_sdk = "0.31"
+opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
+# tracing is *always* required because it is the only way to extract the Service.Operation for interceptor
+tracing = { version = "0.1"}
 
-# serde = { version = "1.0", features = ["derive"] }
-# serde_json = "1.0"
+# Backend: tracing
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"], optional = true }
+tracing-opentelemetry = { version = "0.32", default-features = false, optional = true }
 
-# uuid = { version = "1.0", features = ["v4"] }
+# Environment: Lambda
+lambda_runtime = { version = "1", optional = true }
+pin-project = { version = "1", optional = true }
+tokio = { version = "1", optional = true }
 
-# # Tracing
-# tracing = "0.1"
-# tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-# tracing-opentelemetry = { version = "0.32.0", default-features = false }
+# Environment: ECS/EKS/EC2
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"], optional = true }
 
-# # OpenTelemetry
-# opentelemetry = { version = "0.31.0" }
-# opentelemetry_sdk = { version = "0.31.0" }
-# opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
-# opentelemetry-aws = { version = "0.19.0", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"] }
+# Extraction: per-service SDK dependencies
+aws-sdk-dynamodb = { version = "1", optional = true }
+serde = { version = "1", optional = true }
+serde_json = { version = "1", optional = true }
+aws-sdk-s3 = { version = "1", optional = true }
+aws-sdk-sqs = { version = "1", optional = true }
+
+# Export: X-Ray
+# Pending merge of PR #549 https://github.com/open-telemetry/opentelemetry-rust-contrib/pull/549
+opentelemetry-aws = {  package = "opentelemetry-aws-temporary-fork", version = "0.1.0", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
 
 
-# [patch.crates-io]
-# opentelemetry-aws = { git = "https://github.com/RustyServerless/opentelemetry-rust-contrib", branch = "feat/aws-xray-exporter-wip" }
+[dev-dependencies]
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+
+[features]
+default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
+
+# --- Backend features ---
+tracing-backend = ["dep:tracing-opentelemetry", "dep:tracing-subscriber"]
+otel-backend = []
+
+# --- Environment features ---
+env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio"]
+env-ecs = ["dep:reqwest", "dep:serde"]
+env-eks = ["dep:reqwest", "dep:serde"]
+env-ec2 = ["dep:reqwest", "dep:serde"]
+
+# --- Extraction features ---
+extract-dynamodb = ["dep:aws-sdk-dynamodb", "dep:serde", "dep:serde_json"]
+extract-s3 = ["dep:aws-sdk-s3"]
+extract-sqs = ["dep:aws-sdk-sqs"]
+
+# --- Export features ---
+export-xray = ["dep:opentelemetry-aws"]
