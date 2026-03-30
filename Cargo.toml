@@ -1,11 +1,11 @@
 [package]
 name = "awssdk-instrumentation"
-version = "0.0.0"
+version = "0.1.0"
 rust-version = "1.85.0"
 edition = "2024"
 authors = ["Jérémie RODON <jeremie.rodon@gmail.com>"]
 license = "MIT"
-description = "Out-of-the-box instrumentation for the AWS SDK for Rust, with special care for code running on AWS Lambda"
+description = "Out-of-the-box OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust, with first-class support for AWS Lambda"
 repository = "https://github.com/RustyServerless/awssdk-instrumentation"
 documentation = "https://docs.rs/awssdk-instrumentation"
 readme = "README.md"
@@ -19,10 +19,7 @@ exclude = [
     "nix/",
     "AGENTS.md",
     "CONTRIBUTING.md",
-    "flake.nix",
-    "flake.lock",
 ]
-
 
 [dependencies]
 log = "0.4"

@@ -527,7 +527,7 @@ dependencies = [
 
 [[package]]
 name = "awssdk-instrumentation"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aws-config",
  "aws-sdk-dynamodb",
