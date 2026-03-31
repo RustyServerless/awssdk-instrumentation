@@ -295,7 +295,7 @@ Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information
 
 ## Authors
 
-- Jérémie RODON ([@JeremieRodon](https://github.com/JeremieRodon)) — [RustyServerless](https://github.com/RustyServerless)
+- Jérémie RODON ([@JeremieRodon](https://github.com/JeremieRodon)) [![LinkedIn](https://img.shields.io/badge/linkedin-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/JeremieRodon) — [RustyServerless](https://github.com/RustyServerless) [rustysl.com](https://rustysl.com/index.html?from=github-lambda-appsync)
 
 ## Related Projects
 
@@ -303,3 +303,5 @@ Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information
 - [opentelemetry-rust-contrib](https://github.com/open-telemetry/opentelemetry-rust-contrib) — Community-maintained OTel exporters and propagators (X-Ray, etc.)
 - [aws-sdk-rust](https://github.com/awslabs/aws-sdk-rust) — The AWS SDK for Rust
 - [lambda_runtime](https://github.com/awslabs/aws-lambda-rust-runtime) — The Rust runtime for AWS Lambda
+
+If you find this crate useful, please star the repository and share your feedback!
