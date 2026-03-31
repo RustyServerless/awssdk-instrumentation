@@ -698,21 +698,6 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         );
 
         let sdk_operation = {
-            #[cfg(feature = "tracing-backend")]
-            let span = {
-                use ::tracing::Span;
-                use utils::StorableOption;
-
-                // In the tracing context, the Span we want will have been put in the ConfigBag!
-                let so_span = cfg.load::<StorableOption<Span>>().ok_or(
-                    "AWS SDK operation top-level tracing:Span not found, \
-                        it likely means AWS changed their API, \
-                        please contact the maintainer immediately.",
-                )?;
-                so_span.as_ref().expect("StorableOption always set to Some")
-            };
-
-            #[cfg(all(feature = "otel-backend", not(feature = "tracing-backend")))]
             let (_guard, span) = {
                 use utils::SpanPauser;
 
