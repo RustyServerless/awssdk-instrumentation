@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-27
+
+Re-export every external crate that appears in the public API so that users
+no longer have to add the same dependencies to their own `Cargo.toml` simply
+to make this crate's macros and traits compile.
+
+### Added
+
+- Crate-root re-exports of `aws_config`, `aws_smithy_runtime_api`,
+  `aws_smithy_types`, `opentelemetry`, `opentelemetry_sdk`, and
+  `opentelemetry_semantic_conventions`.
+- Crate-root re-exports of `tracing`, `tracing_subscriber`, and
+  `tracing_opentelemetry`, gated on the `tracing-backend` feature.
+- `lambda::LambdaError` and `lambda::LambdaEvent` convenience aliases for
+  `lambda_runtime::Error` and `lambda_runtime::LambdaEvent`.
+- The `lambda` module now publicly re-exports `lambda_runtime` (previously
+  `#[doc(hidden)]`).
+- New "Re-exported crates" section in the crate-level documentation.
+
+### Changed
+
+- `aws-config` moved from `dev-dependencies` to `dependencies`, with the
+  `behavior-version-latest` feature pinned. The `make_lambda_runtime!` and
+  `aws_sdk_config_provider!` macros now reference `aws-config` through the
+  crate's re-export, so users no longer need to depend on `aws-config`
+  directly.
+- `opentelemetry_sdk` is now re-exported at the crate root rather than only
+  inside the `lambda` module, matching its use in non-Lambda public APIs.
+- Documentation examples updated to use the convenience aliases
+  `LambdaError` / `LambdaEvent` and the re-exported `lambda_runtime` path.
+
+### Notes
+
+- Users still need to declare these as direct dependencies: the `aws-sdk-*`
+  service crates they use, `tokio` (the `#[tokio::main]` proc-macro emitted
+  by `make_lambda_runtime!` resolves `tokio` by absolute path), and
+  `serde_json` for typical Lambda event types.
+
 ## [0.1.1] - 2026-03-31
 
 (fix) Critical bug in tracing instrumentation crashing the client process.
@@ -47,6 +85,7 @@ Initial public release.
 ### Added
 - Crate.io placeholder
 
+[0.2.0]: https://github.com/RustyServerless/awssdk-instrumentation/releases/tag/v0.2.0
 [0.1.1]: https://github.com/RustyServerless/awssdk-instrumentation/releases/tag/v0.1.1
 [0.1.0]: https://github.com/RustyServerless/awssdk-instrumentation/releases/tag/v0.1.0
 [0.0.0]: https://github.com/RustyServerless/awssdk-instrumentation/releases/tag/v0.0.0

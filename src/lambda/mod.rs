@@ -1,8 +1,8 @@
 //! Lambda support: Tower layer, per-invocation spans, and the
 //! `make_lambda_runtime!` macro (`env-lambda` feature).
 //!
-//! This module re-exports the most commonly used types and provides the
-//! [`make_lambda_runtime!`] macro for zero-boilerplate Lambda setup.
+//! This module re-exports the most commonly used Lambda types and provides
+//! the [`make_lambda_runtime!`] macro for zero-boilerplate Lambda setup.
 //!
 //! ## Sub-modules
 //!
@@ -13,13 +13,26 @@
 //! - [`macros`] — [`make_lambda_runtime!`] and its helper
 //!   [`macros::default_flush_tracer`].
 //!
+//! ## Re-exports
+//!
+//! - [`lambda_runtime`] — the underlying Lambda runtime crate, available so
+//!   that users do not need to add it as a direct dependency.
+//! - [`LambdaError`] / [`LambdaEvent`] — convenience aliases for
+//!   `lambda_runtime::Error` and `lambda_runtime::LambdaEvent`.
+//! - [`OTelFaasTrigger`] — re-exported from [`layer`] for convenience.
+//!
+//! Note: `tokio` is *not* re-exported. The `#[tokio::main]` attribute used
+//! inside [`make_lambda_runtime!`] resolves the `tokio` crate by its absolute
+//! path, so users must declare `tokio` as a direct dependency. Rust Lambda
+//! functions need `tokio` anyway.
+//!
 //! ## Quick example
 //!
 //! ```no_run
-//! use lambda_runtime::{Error, LambdaEvent};
+//! use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent};
 //! use serde_json::Value;
 //!
-//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 //!     Ok(event.payload)
 //! }
 //!
@@ -34,9 +47,8 @@
 pub mod layer;
 pub mod macros;
 
-#[doc(hidden)]
-pub use lambda_runtime;
-#[doc(hidden)]
-pub use opentelemetry_sdk;
-
 pub use layer::OTelFaasTrigger;
+
+pub use lambda_runtime;
+
+pub use lambda_runtime::{Error as LambdaError, LambdaEvent};

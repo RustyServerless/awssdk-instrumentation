@@ -24,13 +24,19 @@
 //!   each generates a `OnceLock`-backed accessor with
 //!   [`crate::interceptor::DefaultInterceptor`] pre-attached
 //!
+//! ## Prerequisites
+//!
+//! The macro emits `#[tokio::main]` on the generated `main` function. Because
+//! the `tokio` proc-macro references itself by absolute path (`tokio`),
+//! you must add `tokio` to your own `Cargo.toml`.
+//!
 //! ## Example
 //!
 //! ```no_run
-//! use lambda_runtime::{Error, LambdaEvent};
+//! use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent};
 //! use serde_json::Value;
 //!
-//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 //!     Ok(event.payload)
 //! }
 //!
@@ -88,15 +94,20 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 ///   Each generates a `OnceLock`-backed accessor with [`DefaultInterceptor`]
 ///   pre-attached.
 ///
+/// # Prerequisites
+///
+/// `tokio` must be a direct dependency of your crate. Lambda functions in Rust
+/// need `tokio` anyway.
+///
 /// # Examples
 ///
 /// Minimal usage — just the handler:
 ///
 /// ```no_run
-/// use lambda_runtime::{Error, LambdaEvent};
+/// use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent};
 /// use serde_json::Value;
 ///
-/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 ///     Ok(event.payload)
 /// }
 ///
@@ -107,11 +118,10 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 ///
 /// ```no_run
 /// # mod private {
-/// use lambda_runtime::{Error, LambdaEvent};
+/// use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent, OTelFaasTrigger};
 /// use serde_json::Value;
-/// use awssdk_instrumentation::lambda::OTelFaasTrigger;
 ///
-/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 ///     let _client = dynamodb_client();
 ///     Ok(event.payload)
 /// }
@@ -168,7 +178,7 @@ macro_rules! make_lambda_runtime {
         async fn main() -> Result<(), $crate::lambda::lambda_runtime::Error> {
 
             const _: fn() = || {
-                fn _test_telemetry_init(_f: fn() -> $crate::lambda::opentelemetry_sdk::trace::SdkTracerProvider) {}
+                fn _test_telemetry_init(_f: fn() -> $crate::opentelemetry_sdk::trace::SdkTracerProvider) {}
                 _test_telemetry_init($telemetry_init)
             };
             let tracer_provider = $telemetry_init();

@@ -53,7 +53,7 @@ The default feature set (`tracing-backend` + `env-lambda` + `extract-dynamodb` +
 
 - Rust 1.85.0 or later
 - An AWS SDK for Rust client (`aws-sdk-dynamodb`, `aws-sdk-s3`, etc.)
-- For Lambda workloads: `lambda_runtime` and `tokio`
+- For Lambda workloads: `tokio`.
 
 ### Installation
 
@@ -74,20 +74,33 @@ The default features (`tracing-backend`, `env-lambda`, `extract-dynamodb`, `expo
 
 ## Usage
 
-> **Note:** This crate does not re-export the AWS SDK crates. You must add
-> `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-s3`, or whichever service crates
-> you use to your own `Cargo.toml`.
+> **Re-exports.** To minimise the dependencies you need to declare in your own
+> `Cargo.toml`, this crate re-exports every external crate that appears in its
+> public API: `aws-config`, `aws-smithy-runtime-api`, `aws-smithy-types`,
+> `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-semantic-conventions`,
+> plus `tracing` / `tracing-subscriber` / `tracing-opentelemetry` (under
+> `tracing-backend`), `lambda_runtime` (under `env-lambda`), and
+> `opentelemetry-aws` (under `export-xray`). All are available via
+> `awssdk_instrumentation::<crate>`.
+>
+> You still need to add the following to your own `Cargo.toml`:
+>
+> - The `aws-sdk-*` service crates you use (`aws-sdk-dynamodb`, `aws-sdk-s3`, …).
+> - `tokio` — the `#[tokio::main]` proc-macro emitted by `make_lambda_runtime!`
+>   resolves the `tokio` crate by absolute path (`::tokio`), so re-exporting
+>   would not help. Lambda functions in Rust need `tokio` anyway.
+> - `serde_json` (or `serde`) — for typical Lambda event types.
 
 ### Quick Start — Lambda with DynamoDB
 
 The `make_lambda_runtime!` macro generates `main()`, telemetry initialisation, SDK client singletons, and the Tower layer in a single call:
 
 ```rust
-use lambda_runtime::{Error, LambdaEvent};
+use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent};
 use serde_json::Value;
 
 // 1. Declare the handler.
-async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     // Use dynamodb_client() anywhere — the interceptor
     // automatically records DynamoDB spans.
     let _resp = dynamodb_client()
@@ -112,24 +125,30 @@ awssdk_instrumentation::make_lambda_runtime!(
 When you need more control over the telemetry stack, wire the pieces together yourself:
 
 ```rust
-use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
 use awssdk_instrumentation::{
     init::default_telemetry_init,
     interceptor::DefaultInterceptor,
-    lambda::layer::{DefaultTracingLayer, OTelFaasTrigger},
+    lambda::{
+        LambdaError, LambdaEvent,
+        lambda_runtime::{Runtime, service_fn},
+        layer::DefaultTracingLayer,
+        OTelFaasTrigger,
+    },
 };
 
-async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     todo!("Do Stuff...");
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), LambdaError> {
     // Initialise telemetry (sets global tracer provider + tracing subscriber).
     let tracer_provider = default_telemetry_init();
 
     // Build an SDK client with the interceptor attached.
+    // `aws_config` is re-exported by this crate — you can also import it
+    // directly via `awssdk_instrumentation::aws_config`.
     let sdk_config = aws_config::load_from_env().await;
     let dynamo = aws_sdk_dynamodb::Client::from_conf(
         aws_sdk_dynamodb::config::Builder::from(&sdk_config)
@@ -138,7 +157,7 @@ async fn main() -> Result<(), Error> {
     );
 
     // Wrap the Lambda runtime with the Tower layer.
-    lambda_runtime::Runtime::new(lambda_runtime::service_fn(handler))
+    Runtime::new(service_fn(handler))
         .layer(
             DefaultTracingLayer::new(move || {
                 let _ = tracer_provider.force_flush();
@@ -279,7 +298,7 @@ Implement the `AttributeExtractor` trait and register it on the interceptor's `e
 
 **Do I need to add `opentelemetry` or `tracing` to my own `Cargo.toml`?**
 
-Not for basic usage. The `make_lambda_runtime!` macro and `default_telemetry_init()` handle all OTel and tracing setup internally. You only need direct dependencies on these crates if you compose the subscriber stack yourself or interact with OTel/tracing APIs in your handler code.
+No — both are re-exported. Reach them via `awssdk_instrumentation::opentelemetry` and `awssdk_instrumentation::tracing` (the latter requires `tracing-backend`, which is on by default). The same applies to `tracing-subscriber`, `tracing-opentelemetry`, `opentelemetry_sdk`, and `opentelemetry-semantic-conventions`. If you prefer adding them as direct dependencies for shorter `use` paths, that works too.
 
 **Can I use this crate outside of Lambda?**
 

@@ -312,9 +312,9 @@ where
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! aws_sdk_config_provider {
     () => {
-        static AWS_SDK_CONFIG: ::std::sync::OnceLock<::aws_config::SdkConfig> =
+        static AWS_SDK_CONFIG: ::std::sync::OnceLock<$crate::aws_config::SdkConfig> =
             ::std::sync::OnceLock::new();
-        fn aws_sdk_config() -> &'static ::aws_config::SdkConfig {
+        fn aws_sdk_config() -> &'static $crate::aws_config::SdkConfig {
             AWS_SDK_CONFIG.get().unwrap()
         }
 
@@ -326,7 +326,7 @@ macro_rules! aws_sdk_config_provider {
         #[deny(dead_code)]
         async fn sdk_config_init() {
             AWS_SDK_CONFIG
-                .set(::aws_config::load_from_env().await)
+                .set($crate::aws_config::load_from_env().await)
                 .unwrap();
         }
     };
