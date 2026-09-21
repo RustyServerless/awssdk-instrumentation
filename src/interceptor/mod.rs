@@ -688,7 +688,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::trace!("CFG: {:?}", cfg);
+        log::trace!("CFG: {cfg:?}");
 
         span.set_attribute(
             semco::CLOUD_REGION,
@@ -732,7 +732,7 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
 
         let input = context.input();
 
-        log::trace!("INPUT: {:?}", input);
+        log::trace!("INPUT: {input:?}");
 
         call_extractors!(self service operation extract_input input_hooks input span);
 
@@ -748,13 +748,13 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::trace!("CFG: {:?}", cfg);
+        log::trace!("CFG: {cfg:?}");
 
         let (service, operation) = extract_service_operation(cfg);
 
         let request = context.request();
 
-        log::trace!("REQUEST: {:?}", request);
+        log::trace!("REQUEST: {request:?}");
 
         call_extractors!(self service operation extract_request request_hooks request span);
 
@@ -769,13 +769,13 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::trace!("CFG: {:?}", cfg);
+        log::trace!("CFG: {cfg:?}");
 
         let (service, operation) = extract_service_operation(cfg);
 
         let response = context.response();
 
-        log::trace!("RESPONSE: {:?}", response);
+        log::trace!("RESPONSE: {response:?}");
 
         span.set_attribute(
             semco::HTTP_RESPONSE_STATUS_CODE,
@@ -804,13 +804,13 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
         cfg: &mut ConfigBag,
         span: &mut SW,
     ) -> Result<(), BoxError> {
-        log::trace!("CFG: {:?}", cfg);
+        log::trace!("CFG: {cfg:?}");
 
         let (service, operation) = extract_service_operation(cfg);
 
         let output_or_error = context.output_or_error();
 
-        log::trace!("OUTPUT_OR_ERROR: {:?}", output_or_error);
+        log::trace!("OUTPUT_OR_ERROR: {output_or_error:?}");
 
         match output_or_error {
             Some(Ok(output)) => {

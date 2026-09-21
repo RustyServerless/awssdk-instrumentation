@@ -7,8 +7,8 @@ Instructions for AI coding agents operating in this repository.
 Rust library crate providing OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust,
 targeting AWS Lambda workloads. Single-crate project (no workspace), Rust edition 2024.
 
-- **MSRV:** 1.85.0 (declared in `Cargo.toml` `rust-version`)
-- **Dev toolchain:** 1.93 (pinned via `rust-toolchain.toml`)
+- **MSRV:** 1.88.0 (declared in `Cargo.toml` `rust-version`)
+- **Dev toolchain:** 1.88 (pinned via `rust-toolchain.toml`)
 - **License:** MIT
 
 ## Build Commands
@@ -48,11 +48,11 @@ cargo test --all-features
 CI runs on every push/PR to `main` when `src/`, `Cargo.toml`, `Cargo.lock`, or workflows change.
 Three parallel jobs:
 
-| Job  | Toolchain | Commands |
-|------|-----------|----------|
+| Job  | Toolchain | Commands                                                      |
+| ---- | --------- | ------------------------------------------------------------- |
 | Lint | stable    | `cargo fmt --check`, clippy, rustdoc (all with `-D warnings`) |
-| Test | stable    | `cargo test --all-features` |
-| MSRV | 1.85.0   | `cargo check --all-features`, `cargo test --all-features` |
+| Test | stable    | `cargo test --all-features`                                   |
+| MSRV | 1.88.0    | `cargo check --all-features`, `cargo test --all-features`     |
 
 Clippy runs on **stable** (not MSRV) so the `incompatible_msrv` lint catches APIs newer than
 the declared MSRV.
@@ -61,7 +61,7 @@ the declared MSRV.
 
 ### General
 
-- Write clean, idiomatic Rust. Rust edition 2024 — use its features but respect MSRV 1.85.0.
+- Write clean, idiomatic Rust. Rust edition 2024 — use its features but respect MSRV 1.88.0.
 - Zero warnings policy: clippy and rustdoc warnings are treated as errors.
 
 ### Formatting
@@ -115,7 +115,7 @@ the declared MSRV.
 
 ### MSRV Discipline
 
-- The MSRV is 1.85.0. Do not use std library APIs or language features introduced after
+- The MSRV is 1.88.0. Do not use std library APIs or language features introduced after
   this version without updating `rust-version` in `Cargo.toml`.
 - Clippy on stable with the `incompatible_msrv` lint will catch violations.
 - CI verifies compilation and tests pass on the MSRV toolchain.
@@ -125,18 +125,18 @@ the declared MSRV.
 Features are grouped by category with a prefix convention. Defaults: `tracing-backend`,
 `env-lambda`, `extract-dynamodb`, `export-xray`.
 
-| Feature            | Category    | Gates                                              |
-|--------------------|-------------|----------------------------------------------------|
-| `tracing-backend`  | Backend     | `tracing` + `tracing-opentelemetry` integration    |
-| `otel-backend`     | Backend     | Direct OpenTelemetry span management               |
-| `env-lambda`       | Environment | Lambda Tower layer, resource detector, macro       |
-| `env-ecs`          | Environment | ECS resource detector                              |
-| `env-eks`          | Environment | EKS resource detector                              |
-| `env-ec2`          | Environment | EC2 resource detector                              |
+| Feature            | Category    | Gates                                                |
+| ------------------ | ----------- | ---------------------------------------------------- |
+| `tracing-backend`  | Backend     | `tracing` + `tracing-opentelemetry` integration      |
+| `otel-backend`     | Backend     | Direct OpenTelemetry span management                 |
+| `env-lambda`       | Environment | Lambda Tower layer, resource detector, macro         |
+| `env-ecs`          | Environment | ECS resource detector                                |
+| `env-eks`          | Environment | EKS resource detector                                |
+| `env-ec2`          | Environment | EC2 resource detector                                |
 | `extract-dynamodb` | Extraction  | `aws-sdk-dynamodb` dep, DynamoDB attribute extractor |
-| `extract-s3`       | Extraction  | `aws-sdk-s3` dep, S3 attribute extractor           |
-| `extract-sqs`      | Extraction  | `aws-sdk-sqs` dep, SQS attribute extractor         |
-| `export-xray`      | Export      | `opentelemetry-aws` dep, X-Ray propagator/exporter |
+| `extract-s3`       | Extraction  | `aws-sdk-s3` dep, S3 attribute extractor             |
+| `extract-sqs`      | Extraction  | `aws-sdk-sqs` dep, SQS attribute extractor           |
+| `export-xray`      | Export      | `opentelemetry-aws` dep, X-Ray propagator/exporter   |
 
 At least one backend feature must be enabled (enforced by `compile_error!` in `lib.rs`).
 

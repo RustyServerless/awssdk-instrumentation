@@ -56,8 +56,6 @@ cargo check
 cargo test
 ```
 
-**Important:** This project declares an MSRV (Minimum Supported Rust Version) of **1.85.0** in `Cargo.toml`. The development toolchain is intentionally newer. Clippy reads the `rust-version` field from `Cargo.toml` and will warn you if you use APIs or syntax that are not available in the MSRV. This is enforced both locally (via the pre-commit hook) and in CI.
-
 ### 3. Pre-commit Hooks
 
 The pre-commit hook runs the following checks on every commit that touches Rust files:
@@ -89,11 +87,11 @@ These are the same checks that run in CI, so **if your commit passes locally, it
 
 GitHub Actions runs three parallel jobs on every push and pull request:
 
-| Job | Toolchain | What it checks |
-|---|---|---|
-| **Lint** | stable | `cargo fmt`, `cargo clippy` (with MSRV enforcement), `cargo doc` |
-| **Test** | stable | `cargo test` |
-| **MSRV Check** | 1.85.0 | `cargo check` and `cargo test` compile and pass on the declared MSRV |
+| Job            | Toolchain | What it checks                                                       |
+| -------------- | --------- | -------------------------------------------------------------------- |
+| **Lint**       | stable    | `cargo fmt`, `cargo clippy` (with MSRV enforcement), `cargo doc`     |
+| **Test**       | stable    | `cargo test`                                                         |
+| **MSRV Check** | 1.88.0    | `cargo check` and `cargo test` compile and pass on the declared MSRV |
 
 Clippy runs on **stable** (not on the MSRV toolchain) so that the `incompatible_msrv` lint can detect usage of APIs introduced after the declared MSRV.
 
