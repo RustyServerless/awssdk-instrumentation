@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added the `extra_init_code` option to the `make_lambda_runtime!` macro, allowing to pass arbitraty code to be executed just before launching the lambda runtime.
+
 ### Changed
 
 - Bumped MSRV to 1.88 and re-fixing try_build tests outputs

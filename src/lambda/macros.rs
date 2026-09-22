@@ -9,6 +9,7 @@
 //! ```text
 //! make_lambda_runtime!(
 //!     handler_fn
+//!     [, extra_init_code = { ... }]
 //!     [, trigger = OTelFaasTrigger::Http]
 //!     [, telemetry_init = my_telemetry_init]
 //!     [, client_fn() -> SdkClientType]*
@@ -77,6 +78,7 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 /// ```text
 /// make_lambda_runtime!(
 ///     handler_fn
+///     [, extra_init_code = { ... }]
 ///     [, trigger = OTelFaasTrigger::Variant]
 ///     [, telemetry_init = my_telemetry_init_fn]
 ///     [, client_fn() -> SdkClientType]*
@@ -86,6 +88,9 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 /// All parameters after `handler_fn` are optional and can appear in any order:
 ///
 /// - **`handler_fn`** *(required)* — path to the async handler function.
+/// - **`extra_init_code`** — arbitrary code delimited in {} that will be executed
+///   in `main()` just before the Lambda runtime and after every other generated
+///   initialization steps.
 /// - **`trigger`** — the [`OTelFaasTrigger`] variant for the `faas.trigger`
 ///   attribute. Defaults to [`OTelFaasTrigger::Http`].
 /// - **`telemetry_init`** — a custom telemetry init function with signature
@@ -145,35 +150,158 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 /// [`aws_sdk_config_provider!`]: crate::aws_sdk_config_provider
 #[macro_export]
 macro_rules! make_lambda_runtime {
+    // extra_init_code Finding
+    (
+        [$($found:tt)+]
+        @find_extra_init_code
+        $(@$other_ats:ident)*
+        [
+            extra_init_code = {$($extra_init_code:tt)*},
+            $($candidates:tt)*
+        ]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ extra_init_code = {$($extra_init_code)*},]
+            $(@$other_ats)*
+            [$($after)* $($candidates)*]
+        );
+    };
+    (
+        [$($found:tt)+]
+        @find_extra_init_code
+        $(@$other_ats:ident)*
+        []
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ extra_init_code = {},]
+            $(@$other_ats)*
+            [$($after)*]
+        );
+    };
+
+    // telemetry_init Finding
+    (
+        [$($found:tt)+]
+        @find_telemetry_init
+        $(@$other_ats:ident)*
+        [
+            telemetry_init = $telemetry_init:path,
+            $($candidates:tt)*
+        ]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ telemetry_init = $telemetry_init,]
+            $(@$other_ats)*
+            [$($after)* $($candidates)*]
+        );
+    };
+    (
+        [$($found:tt)+]
+        @find_telemetry_init
+        $(@$other_ats:ident)*
+        []
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ telemetry_init = $crate::init::default_telemetry_init,]
+            $(@$other_ats)*
+            [$($after)*]
+        );
+    };
+
+    // trigger Finding
+    (
+        [$($found:tt)+]
+        @find_trigger
+        $(@$other_ats:ident)*
+        [
+            trigger = $trigger:expr,
+            $($candidates:tt)*
+        ]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ trigger = $trigger,]
+            $(@$other_ats)*
+            [$($after)* $($candidates)*]
+        );
+    };
+    (
+        [$($found:tt)+]
+        @find_trigger
+        $(@$other_ats:ident)*
+        []
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ trigger = $crate::lambda::layer::OTelFaasTrigger::Http,]
+            $(@$other_ats)*
+            [$($after)*]
+        );
+    };
+
+    // Cursor avancement
+    (
+        [$($found:tt)+]
+        $(@$ats:ident)+
+        [$t:tt $($candidates:tt)*]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+]
+            $(@$ats)+
+            [$($candidates)*]
+            $($after)*
+            $t
+        );
+    };
+
+    // Exit finding phase
+    (
+        [$($found:tt)+]
+        [$($rest:tt)*]
+    ) => {
+        $crate::make_lambda_runtime!(
+            internal
+            $($found)+
+            $($rest)*
+        );
+    };
+
+    // Final internal processing
     (
         internal
         $handler:path,
+        extra_init_code = {$($extra_init_code:tt)*},
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr
+        trigger = $trigger:expr,
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ;);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; $($extra_init_code)*);
     };
     (
         internal
         $handler:path,
+        extra_init_code = {$($extra_init_code:tt)*},
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)+
+        trigger = $trigger:expr,
+        $($name:ident() -> $client:ty,)+
     ) => {
         $crate::aws_sdk_config_provider!();
         $(
             $crate::aws_sdk_client_provider!($name() -> $client);
         )+
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; with_code sdk_config_init().await;);
+        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; sdk_config_init().await; $($extra_init_code)*);
     };
     (
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr ;
-        $(with_code $($code:tt)+)?
+        $($code:tt)*
     ) => {
-
         #[tokio::main]
         async fn main() -> Result<(), $crate::lambda::lambda_runtime::Error> {
 
@@ -183,8 +311,7 @@ macro_rules! make_lambda_runtime {
             };
             let tracer_provider = $telemetry_init();
 
-            $($($code)+)?
-
+            $($code)*
 
             $crate::lambda::lambda_runtime::Runtime::new($crate::lambda::lambda_runtime::service_fn($handler))
                 .layer(
@@ -195,40 +322,14 @@ macro_rules! make_lambda_runtime {
                 .await
         }
     };
-    // tracer_provider and trigger, 2 combinations
-    (
-        $handler:path,
-        trigger = $trigger:expr,
-        telemetry_init = $telemetry_init:path
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger $(,$name() -> $client)*);
-    };
-    // Only one optional parameter, 2 possibilities
-    (
-        $handler:path,
-        trigger = $trigger:expr
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $trigger $(,$name() -> $client)*);
-    };
-    (
-        $handler:path,
-        telemetry_init = $telemetry_init:path
-        $(, $name:ident() -> $client:ty)*
-    ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http $(,$name() -> $client)*);
-    };
-    // No optional parameter
-    ($handler:path $(, $name:ident() -> $client:ty)*) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $crate::init::default_telemetry_init, trigger = $crate::lambda::layer::OTelFaasTrigger::Http $(,$name() -> $client)*);
+    // Entry point
+    ($handler:path $(,$($rest:tt)+)?) => {
+        $crate::make_lambda_runtime!(
+            [$handler, ]
+            @find_extra_init_code
+            @find_telemetry_init
+            @find_trigger
+            [$($($rest)+,)?]
+        );
     };
 }
