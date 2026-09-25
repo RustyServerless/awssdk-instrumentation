@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.3.0...HEAD
+
+## [0.3.0]
+
 ### Added
 
 - Added the `extra_init_code` option to the `make_lambda_runtime!` macro, allowing to pass arbitrary code to be executed just before launching the lambda runtime.
@@ -50,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `XRAY_METADATA` environment variable no longer accepts the `all` value, because exporting all attributes as metadata is now the default. Setting `XRAY_METADATA` to an empty value prevents the default export-all behavior. `XRAY_ANNOTATIONS` is unchanged.
 - The default `OTelFaasTrigger` variant is now Http (instead of DataSource). Breaking if your code uses `TracingLayer::new()` without `.with_trigger(...)`.
 
-[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.2.0...v0.3.0
 
 ## [0.2.0] - 2026-04-27
 

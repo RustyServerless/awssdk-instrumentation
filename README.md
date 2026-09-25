@@ -61,7 +61,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-awssdk-instrumentation = "0.2"
+awssdk-instrumentation = "0.3"
 ```
 
 Or using cargo:
