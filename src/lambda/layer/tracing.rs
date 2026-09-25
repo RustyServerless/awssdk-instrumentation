@@ -12,10 +12,12 @@ use super::{InstrumentedFuture, Instrumentor, utils::XRayTraceHeader};
 
 /// [`Instrumentor`] implementation for the `tracing-backend` feature.
 ///
-/// `TracingInstrumentor` creates a `tracing::info_span!` named
-/// `"Lambda runtime invoke"` for each invocation and stores it in a
-/// Tokio task-local so that [`Instrumentor::with_invocation_span`] can
-/// access it from child tasks.
+/// `TracingInstrumentor` creates a `tracing::info_span!` named `"Invocation"`
+/// for each invocation and stores it in a Tokio task-local so that
+/// [`Instrumentor::with_invocation_span`] can access it from child tasks. The
+/// span has `internal` kind by default, or `server` kind when the
+/// `xray-no-lambda-node-nesting` feature is enabled, and carries the
+/// standard FaaS attributes.
 ///
 /// The X-Ray trace context (when present) is set as the OTel parent of the
 /// span via `tracing-opentelemetry`'s [`OpenTelemetrySpanExt::set_parent`].
@@ -44,14 +46,19 @@ impl Instrumentor for TracingInstrumentor {
     type InvocationSpan = Span;
 
     fn instrument<F: Future>(inner: F, context: super::InvocationContext) -> Self::IFut<F> {
+        let kind = if cfg!(feature = "xray-no-lambda-node-nesting") {
+            "server"
+        } else {
+            "internal"
+        };
         let span = tracing::info_span!(
-            "Lambda runtime invoke",
-            otel.kind = "server",
+            "Invocation",
+            otel.kind = kind,
             { semco::FAAS_TRIGGER } = context.trigger.to_string(),
             { semco::CLOUD_RESOURCE_ID } = context.function_arn,
             { semco::FAAS_INVOCATION_ID } = context.request_id,
-            { semco::CLOUD_ACCOUNT_ID } = context.account_id,
             { semco::FAAS_COLDSTART } = context.is_coldstart,
+            { semco::SERVICE_NAME } = context.function_name,
             xray_trace_id = tracing::field::Empty,
         );
 

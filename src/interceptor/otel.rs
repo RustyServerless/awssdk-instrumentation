@@ -5,8 +5,8 @@
 //! through `tracing`. Each SDK call gets its own `CLIENT`-kind span named
 //! `Service.Operation` (e.g. `DynamoDB.GetItem`).
 //!
-//! Use this backend when you want to avoid a `tracing` dependency or when you
-//! need direct control over the OTel span lifecycle.
+//! Use this backend when you don't want to use `tracing` for your instrumentation
+//! dependency or when you need direct control over the OTel span lifecycle.
 //!
 //! [`OtelInterceptor`] is re-exported as [`super::DefaultInterceptor`] when
 //! `otel-backend` is the only active backend.
@@ -55,8 +55,8 @@ use super::{
 /// `Service.Operation` (e.g. `DynamoDB.GetItem`), created and ended directly
 /// via the global OTel tracer.
 ///
-/// Use this backend when you want to avoid a `tracing` dependency or when you
-/// need direct control over the OTel span lifecycle.
+/// Use this backend when you don't want to use `tracing` for your instrumentation
+/// dependency or when you need direct control over the OTel span lifecycle.
 ///
 /// `OtelInterceptor` is re-exported as [`super::DefaultInterceptor`] when
 /// `otel-backend` is the only active backend.
@@ -147,8 +147,12 @@ impl Intercept for OtelInterceptor {
                 .with_start_time(start_time)
                 .with_kind(SpanKind::Client)
                 .with_attributes(vec![
+                    #[allow(
+                        deprecated,
+                        reason = "as of opentelemetry-aws v0.21, needed by the XRay translator to recognize AWS spans"
+                    )]
                     KeyValue::new(semco::RPC_SYSTEM, "aws-api"),
-                    KeyValue::new(super::RPC_SYSTEM_NAME, "aws-api"),
+                    KeyValue::new(semco::RPC_SYSTEM_NAME, "aws-api"),
                 ]),
         );
 
@@ -160,6 +164,10 @@ impl Intercept for OtelInterceptor {
 
         span.update_name(format!("{service}.{operation}"));
         span.set_attributes([
+            #[allow(
+                deprecated,
+                reason = "as of opentelemetry-aws v0.21, needed by the XRay translator to correctly name AWS spans"
+            )]
             KeyValue::new(semco::RPC_SERVICE, service.to_owned()),
             KeyValue::new(semco::RPC_METHOD, operation.to_owned()),
         ]);

@@ -80,14 +80,14 @@ pub trait SpanWrite {
     /// Sets a span attribute with the given OTel semantic-convention key and value.
     ///
     /// The `key` must be a `'static` string — use constants from
-    /// `opentelemetry_semantic_conventions::attribute` or the crate-level
-    /// constants [`DB_SYSTEM_NAME`] and [`RPC_SYSTEM_NAME`].
+    /// [`opentelemetry_semantic_conventions::attribute`], such as
+    /// [`DB_SYSTEM_NAME`] and [`RPC_SYSTEM_NAME`].
     ///
     /// The `value` can be any type that implements `Into<`[`Value`]`>`, including
     /// [`String`], [`bool`], [`i64`], [`f64`], and [`Value`] itself.
     ///
-    /// [`DB_SYSTEM_NAME`]: crate::interceptor::DB_SYSTEM_NAME
-    /// [`RPC_SYSTEM_NAME`]: crate::interceptor::RPC_SYSTEM_NAME
+    /// [`DB_SYSTEM_NAME`]: opentelemetry_semantic_conventions::attribute::DB_SYSTEM_NAME
+    /// [`RPC_SYSTEM_NAME`]: opentelemetry_semantic_conventions::attribute::RPC_SYSTEM_NAME
     fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>);
 
     /// Sets the span status.

@@ -29,23 +29,20 @@ aws-smithy-runtime-api = { version = "1", features = ["client"] }
 aws-smithy-types = "1"
 aws-types = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
-opentelemetry = "0.31"
-opentelemetry_sdk = "0.31"
-opentelemetry-semantic-conventions = { version = "0.31", features = ["semconv_experimental"] }
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-semantic-conventions = { version = "0.33" }
 # tracing is *always* required because it is the only way to extract the Service.Operation for interceptor
 tracing = { version = "0.1"}
+tracing-subscriber = { version = "0.3", default-features = false, features = ["smallvec", "registry"] }
 
 # Backend: tracing
-tracing-subscriber = { version = "0.3", features = ["json", "env-filter"], optional = true }
-tracing-opentelemetry = { version = "0.32", default-features = false, optional = true }
+tracing-opentelemetry = { version = "0.34", default-features = false, optional = true }
 
 # Environment: Lambda
 lambda_runtime = { version = "1", optional = true }
 pin-project = { version = "1", optional = true }
 tokio = { version = "1", optional = true }
-
-# Environment: ECS/EKS/EC2
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"], optional = true }
 
 # Extraction: per-service SDK dependencies
 aws-sdk-dynamodb = { version = "1", optional = true }
@@ -55,21 +52,27 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-sdk-sqs = { version = "1", optional = true }
 
 # Export: X-Ray
-# Pending merge of PR #549 https://github.com/open-telemetry/opentelemetry-rust-contrib/pull/549
-opentelemetry-aws = {  package = "opentelemetry-aws-temporary-fork", version = "0.1.0", features = ["xray-exporter", "xray-daemon-client", "xray-stdout-client"], optional = true }
+opentelemetry-aws = {  version = "0.21", optional = true }
 
 [features]
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
 
 # --- Backend features ---
-tracing-backend = ["dep:tracing-opentelemetry", "dep:tracing-subscriber"]
+tracing-backend = [
+  "dep:tracing-opentelemetry",
+  # enables all the default features of tracing-subscriber + json & env-filter
+  "tracing-subscriber/fmt",
+  "tracing-subscriber/ansi",
+  "tracing-subscriber/json",
+  "tracing-subscriber/env-filter"
+]
 otel-backend = []
 
 # --- Environment features ---
-env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio"]
-env-ecs = ["dep:reqwest", "dep:serde"]
-env-eks = ["dep:reqwest", "dep:serde"]
-env-ec2 = ["dep:reqwest", "dep:serde"]
+env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio", "dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-lambda"]
+env-ecs = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-ecs"]
+env-eks = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-eks"]
+env-ec2 = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-ec2"]
 
 # --- Extraction features ---
 extract-dynamodb = ["dep:aws-sdk-dynamodb", "dep:serde", "dep:serde_json"]
@@ -77,4 +80,5 @@ extract-s3 = ["dep:aws-sdk-s3"]
 extract-sqs = ["dep:aws-sdk-sqs"]
 
 # --- Export features ---
-export-xray = ["dep:opentelemetry-aws"]
+export-xray = ["dep:opentelemetry-aws", "opentelemetry-aws/xray-exporter", "opentelemetry-aws/xray-daemon-client"]
+xray-no-lambda-node-nesting = []

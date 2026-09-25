@@ -136,7 +136,7 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
         input: &context::Input,
         span: &mut SW,
     ) {
-        span.set_attribute(crate::interceptor::DB_SYSTEM_NAME, "aws.dynamodb");
+        span.set_attribute(semco::DB_SYSTEM_NAME, "aws.dynamodb");
         match operation {
             // Operations with per-operation helpers (semconv defines extra attributes)
             "GetItem" => extract_get_item_input(input, span),
@@ -1535,7 +1535,7 @@ mod tests {
 
         // db.system.name is always set
         assert_eq!(
-            span.get(crate::interceptor::DB_SYSTEM_NAME),
+            span.get(semco::DB_SYSTEM_NAME),
             Some(&Value::String("aws.dynamodb".into()))
         );
         // table_names is set for PutItem
@@ -1564,7 +1564,7 @@ mod tests {
 
         // db.system.name is always set
         assert_eq!(
-            span.get(crate::interceptor::DB_SYSTEM_NAME),
+            span.get(semco::DB_SYSTEM_NAME),
             Some(&Value::String("aws.dynamodb".into()))
         );
         // No table_names for unknown operation

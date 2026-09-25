@@ -8,7 +8,7 @@ Rust library crate providing OpenTelemetry/X-Ray instrumentation for the AWS SDK
 targeting AWS Lambda workloads. Single-crate project (no workspace), Rust edition 2024.
 
 - **MSRV:** 1.88.0 (declared in `Cargo.toml` `rust-version`)
-- **Dev toolchain:** 1.88 (pinned via `rust-toolchain.toml`)
+- **Dev toolchain:** 1.88 (pinned via `rust-toolchain.toml`, a symlink to `nix/rust-toolchain.toml`)
 - **License:** MIT
 
 ## Build Commands
@@ -56,6 +56,9 @@ Three parallel jobs:
 
 Clippy runs on **stable** (not MSRV) so the `incompatible_msrv` lint catches APIs newer than
 the declared MSRV.
+
+The `.hooks/pre-commit` hook (installed via `./scripts/install-hooks.sh`) runs the exact same
+four checks as the Full Validation block. If your commit passes locally, it will pass CI.
 
 ## Code Style Guidelines
 
@@ -125,27 +128,36 @@ the declared MSRV.
 Features are grouped by category with a prefix convention. Defaults: `tracing-backend`,
 `env-lambda`, `extract-dynamodb`, `export-xray`.
 
-| Feature            | Category    | Gates                                                |
-| ------------------ | ----------- | ---------------------------------------------------- |
-| `tracing-backend`  | Backend     | `tracing` + `tracing-opentelemetry` integration      |
-| `otel-backend`     | Backend     | Direct OpenTelemetry span management                 |
-| `env-lambda`       | Environment | Lambda Tower layer, resource detector, macro         |
-| `env-ecs`          | Environment | ECS resource detector                                |
-| `env-eks`          | Environment | EKS resource detector                                |
-| `env-ec2`          | Environment | EC2 resource detector                                |
-| `extract-dynamodb` | Extraction  | `aws-sdk-dynamodb` dep, DynamoDB attribute extractor |
-| `extract-s3`       | Extraction  | `aws-sdk-s3` dep, S3 attribute extractor             |
-| `extract-sqs`      | Extraction  | `aws-sdk-sqs` dep, SQS attribute extractor           |
-| `export-xray`      | Export      | `opentelemetry-aws` dep, X-Ray propagator/exporter   |
+| Feature                       | Category    | Gates                                                |
+| ----------------------------- | ----------- | ---------------------------------------------------- |
+| `tracing-backend`             | Backend     | `tracing` + `tracing-opentelemetry` integration      |
+| `otel-backend`                | Backend     | Direct OpenTelemetry span management                 |
+| `env-lambda`                  | Environment | Lambda Tower layer, resource detector, macro         |
+| `env-ecs`                     | Environment | ECS resource detector                                |
+| `env-eks`                     | Environment | EKS resource detector                                |
+| `env-ec2`                     | Environment | EC2 resource detector                                |
+| `extract-dynamodb`            | Extraction  | `aws-sdk-dynamodb` dep, DynamoDB attribute extractor |
+| `extract-s3`                  | Extraction  | `aws-sdk-s3` dep, S3 attribute extractor             |
+| `extract-sqs`                 | Extraction  | `aws-sdk-sqs` dep, SQS attribute extractor           |
+| `export-xray`                 | Export      | `opentelemetry-aws` dep, X-Ray ID generator/exporter |
+| `xray-no-lambda-node-nesting` | Export      | Opt-in span-kind tweak for X-Ray Lambda node nesting |
 
-At least one backend feature must be enabled (enforced by `compile_error!` in `lib.rs`).
+At least one backend feature must be enabled (enforced by `compile_error!` in `lib.rs:260`).
+
+Note: `tracing` and `tracing-subscriber` are **always** compiled in (non-optional deps), even
+under `otel-backend` — the SDK's `Service.Operation` is only reachable via a `tracing` span the
+SDK emits. Do not assume the tracing stack is absent when only `otel-backend` is enabled.
 
 ## Project Structure
 
 ```
 src/
 ├── lib.rs                          # Re-exports, feature gates, crate-level docs
-├── init.rs                         # TracerProvider builder, setup helpers
+├── init.rs                         # default_telemetry_init / default_tracer_provider
+│                                   #   builders; aws_sdk_config_provider! &
+│                                   #   aws_sdk_client_provider! macros. Resource
+│                                   #   detection delegates to opentelemetry_aws::detector
+│                                   #   (gated by env-* features); no local detector code.
 ├── span_write/
 │   ├── mod.rs                      # SpanWrite trait definition
 │   ├── tracing.rs                  # SpanWrite impl for tracing::Span (tracing-backend)
@@ -161,21 +173,15 @@ src/
 │       ├── dynamodb.rs             # (extract-dynamodb)
 │       ├── s3.rs                   # (extract-s3)
 │       └── sqs.rs                  # (extract-sqs)
-├── lambda/                         # (env-lambda)
-│   ├── mod.rs                      # Lambda module re-exports
-│   ├── macros.rs                   # make_lambda_runtime! macro
-│   └── layer/
-│       ├── mod.rs                  # Tower Layer for invocation spans
-│       ├── utils.rs                # Layer helper utilities
-│       ├── tracing.rs              # Tracing-backend layer impl
-│       └── otel.rs                 # OTel-backend layer impl
-└── env/
-    ├── mod.rs                      # Common resource detection types
-    ├── lambda.rs                   # (env-lambda)
-    ├── ecs.rs                      # (env-ecs)
-    ├── eks.rs                      # (env-eks)
-    ├── ec2.rs                      # (env-ec2)
-    └── imds.rs                     # (env-ec2 or env-eks) IMDSv2 client
+└── lambda/                         # (env-lambda)
+    ├── mod.rs                      # Lambda module re-exports (OTelFaasTrigger, lambda_runtime)
+    ├── macros.rs                   # make_lambda_runtime! macro
+    └── layer/
+        ├── mod.rs                  # Shared layer machinery: TracingLayer, TracingService,
+        │                           #   Instrumentor/InstrumentedFuture traits, InvocationContext
+        ├── utils.rs                # OTelFaasTrigger enum, layer helpers
+        ├── tracing.rs              # TracingInstrumentor (Instrumentor impl, tracing-backend)
+        └── otel.rs                 # OtelInstrumentor (Instrumentor impl, otel-backend)
 ```
 
 ## Release Process

@@ -2,53 +2,9 @@
 //!
 //! [`make_lambda_runtime!`] generates a complete `#[tokio::main] async fn main()`
 //! that wires together telemetry initialisation, optional SDK client singletons,
-//! and the Lambda runtime with the [`super::layer::DefaultTracingLayer`] applied.
-//!
-//! ## Macro syntax
-//!
-//! ```text
-//! make_lambda_runtime!(
-//!     handler_fn
-//!     [, extra_init_code = { ... }]
-//!     [, trigger = OTelFaasTrigger::Http]
-//!     [, telemetry_init = my_telemetry_init]
-//!     [, client_fn() -> SdkClientType]*
-//! );
-//! ```
-//!
-//! All parameters after `handler_fn` are optional:
-//!
-//! - `trigger` — sets the `faas.trigger` attribute (default: `Http`)
-//! - `telemetry_init` — custom telemetry init function with signature
-//!   `fn() -> SdkTracerProvider` (default: [`crate::init::default_telemetry_init`])
-//! - `client_fn() -> SdkClientType` — zero or more SDK client declarations;
-//!   each generates a `OnceLock`-backed accessor with
-//!   [`crate::interceptor::DefaultInterceptor`] pre-attached
-//!
-//! ## Prerequisites
-//!
-//! The macro emits `#[tokio::main]` on the generated `main` function. Because
-//! the `tokio` proc-macro references itself by absolute path (`tokio`),
-//! you must add `tokio` to your own `Cargo.toml`.
-//!
-//! ## Example
-//!
-//! ```no_run
-//! use awssdk_instrumentation::lambda::{LambdaError, LambdaEvent};
-//! use serde_json::Value;
-//!
-//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
-//!     Ok(event.payload)
-//! }
-//!
-//! // Minimal: just the handler, defaults to Http trigger.
-//! awssdk_instrumentation::make_lambda_runtime!(handler);
-//! ```
+//! and the Lambda runtime.
 //!
 //! [`make_lambda_runtime!`]: crate::make_lambda_runtime
-
-// make_lambda_runtime! macro — generates main(), tracer init, instrumented
-// SDK clients, Tower layer setup, and Lambda runtime execution.
 
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
@@ -69,35 +25,45 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 
 /// Generates a complete `#[tokio::main] async fn main()` for a Lambda function.
 ///
-/// This macro wires together telemetry initialisation, optional AWS SDK client
-/// singletons, and the Lambda runtime with the [`DefaultTracingLayer`] applied.
-/// It is the recommended entry point for Lambda functions using this crate.
+/// This macro wires together:
+/// - telemetry initialisation,
+/// - optional AWS SDK client singletons with automatic operation-span generation,
+/// - Lambda runtime with a [`TracingLayer`] applied.
+///
+/// It is the recommended entry point for Lambda functions.
 ///
 /// # Syntax
 ///
 /// ```text
 /// make_lambda_runtime!(
-///     handler_fn
+///     handler
 ///     [, extra_init_code = { ... }]
 ///     [, trigger = OTelFaasTrigger::Variant]
 ///     [, telemetry_init = my_telemetry_init_fn]
+///     [, sdk_client_interceptor = CustomInterceptor::new()]
+///     [, lambda_layer_instrumentor = CustomInstrumentor]
 ///     [, client_fn() -> SdkClientType]*
 /// );
 /// ```
 ///
-/// All parameters after `handler_fn` are optional and can appear in any order:
+/// All parameters after `handler` are optional and can appear in any order:
 ///
-/// - **`handler_fn`** *(required)* — path to the async handler function.
+/// - **`handler`** *(required)* — path to the async handler function.
 /// - **`extra_init_code`** — arbitrary code delimited in {} that will be executed
 ///   in `main()` just before the Lambda runtime and after every other generated
 ///   initialization steps.
 /// - **`trigger`** — the [`OTelFaasTrigger`] variant for the `faas.trigger`
-///   attribute. Defaults to [`OTelFaasTrigger::Http`].
+///   attribute. Defaults to [`OTelFaasTrigger::default`].
 /// - **`telemetry_init`** — a custom telemetry init function with signature
 ///   `fn() -> SdkTracerProvider`. Defaults to [`default_telemetry_init`].
+/// - **`sdk_client_interceptor`** — the [`Intercept`] type to use instead of [`DefaultInterceptor`] for AWS SDK clients,
+///   typically an explicit [`TracingInterceptor`] or [`OtelInterceptor`].
+/// - **`lambda_layer_instrumentor`** — the [`Instrumentor`] of the [`TracingLayer`]
+///   to use instead of [`DefaultInstrumentor`], typically [`TracingInstrumentor`] or [`OtelInstrumentor`].
 /// - **`client_fn() -> SdkClientType`** — zero or more SDK client declarations.
-///   Each generates a `OnceLock`-backed accessor with [`DefaultInterceptor`]
-///   pre-attached.
+///   Each generates a `OnceLock`-backed accessor that returns the AWS SDK client
+///   with an interceptor type implementing [`Intercept`] pre-attached that will generate
+///   appropriate spans.
 ///
 /// # Prerequisites
 ///
@@ -144,13 +110,21 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 ///
 /// [`DefaultTracingLayer`]: crate::lambda::layer::DefaultTracingLayer
 /// [`OTelFaasTrigger`]: crate::lambda::OTelFaasTrigger
-/// [`OTelFaasTrigger::Http`]: crate::lambda::OTelFaasTrigger::Http
+/// [`OTelFaasTrigger::default`]: crate::lambda::OTelFaasTrigger::default
 /// [`default_telemetry_init`]: crate::init::default_telemetry_init
+/// [`Intercept`]: aws_smithy_runtime_api::client::interceptors::Intercept
 /// [`DefaultInterceptor`]: crate::interceptor::DefaultInterceptor
+/// [`TracingInterceptor`]: crate::interceptor::tracing::TracingInterceptor
+/// [`OtelInterceptor`]: crate::interceptor::otel::OtelInterceptor
+/// [`TracingLayer`]: crate::lambda::layer::TracingLayer
+/// [`Instrumentor`]: crate::lambda::layer::Instrumentor
+/// [`DefaultInstrumentor`]: crate::lambda::layer::DefaultInstrumentor
+/// [`TracingInstrumentor`]: crate::lambda::layer::TracingInstrumentor
+/// [`OtelInstrumentor`]: crate::lambda::layer::OtelInstrumentor
 /// [`aws_sdk_config_provider!`]: crate::aws_sdk_config_provider
 #[macro_export]
 macro_rules! make_lambda_runtime {
-    // extra_init_code Finding
+    // extra_init_code
     (
         [$($found:tt)+]
         @find_extra_init_code
@@ -181,7 +155,7 @@ macro_rules! make_lambda_runtime {
         );
     };
 
-    // telemetry_init Finding
+    // telemetry_init
     (
         [$($found:tt)+]
         @find_telemetry_init
@@ -212,7 +186,7 @@ macro_rules! make_lambda_runtime {
         );
     };
 
-    // trigger Finding
+    // trigger
     (
         [$($found:tt)+]
         @find_trigger
@@ -237,7 +211,70 @@ macro_rules! make_lambda_runtime {
         $($after:tt)*
     ) => {
         $crate::make_lambda_runtime!(
-            [$($found)+ trigger = $crate::lambda::layer::OTelFaasTrigger::Http,]
+            [$($found)+ trigger = $crate::lambda::layer::OTelFaasTrigger::default(),]
+            $(@$other_ats)*
+            [$($after)*]
+        );
+    };
+
+    // sdk_client_interceptor
+    (
+        [$($found:tt)+]
+        @find_sdk_client_interceptor
+        $(@$other_ats:ident)*
+        [
+            sdk_client_interceptor = $sdk_client_interceptor:expr,
+            $($candidates:tt)*
+        ]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ sdk_client_interceptor = $sdk_client_interceptor,]
+            $(@$other_ats)*
+            [$($after)* $($candidates)*]
+        );
+    };
+    (
+        [$($found:tt)+]
+        @find_sdk_client_interceptor
+        $(@$other_ats:ident)*
+        []
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ sdk_client_interceptor = $crate::interceptor::DefaultInterceptor::new(),]
+            $(@$other_ats)*
+            [$($after)*]
+        );
+    };
+
+
+    // lambda_layer_instrumentor
+    (
+        [$($found:tt)+]
+        @find_lambda_layer_instrumentor
+        $(@$other_ats:ident)*
+        [
+            lambda_layer_instrumentor = $lambda_layer_instrumentor:ty,
+            $($candidates:tt)*
+        ]
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ lambda_layer_instrumentor = $lambda_layer_instrumentor,]
+            $(@$other_ats)*
+            [$($after)* $($candidates)*]
+        );
+    };
+    (
+        [$($found:tt)+]
+        @find_lambda_layer_instrumentor
+        $(@$other_ats:ident)*
+        []
+        $($after:tt)*
+    ) => {
+        $crate::make_lambda_runtime!(
+            [$($found)+ lambda_layer_instrumentor = $crate::lambda::layer::DefaultInstrumentor,]
             $(@$other_ats)*
             [$($after)*]
         );
@@ -278,8 +315,17 @@ macro_rules! make_lambda_runtime {
         extra_init_code = {$($extra_init_code:tt)*},
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
+        sdk_client_interceptor = $sdk_client_interceptor:expr,
+        lambda_layer_instrumentor = $lambda_layer_instrumentor:ty,
     ) => {
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; $($extra_init_code)*);
+        $crate::make_lambda_runtime!(
+            internal
+            $handler,
+            telemetry_init = $telemetry_init,
+            trigger = $trigger,
+            lambda_layer_instrumentor = $lambda_layer_instrumentor ;
+            $($extra_init_code)*
+        );
     };
     (
         internal
@@ -287,19 +333,29 @@ macro_rules! make_lambda_runtime {
         extra_init_code = {$($extra_init_code:tt)*},
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
+        sdk_client_interceptor = $sdk_client_interceptor:expr,
+        lambda_layer_instrumentor = $lambda_layer_instrumentor:ty,
         $($name:ident() -> $client:ty,)+
     ) => {
         $crate::aws_sdk_config_provider!();
         $(
-            $crate::aws_sdk_client_provider!($name() -> $client);
+            $crate::aws_sdk_client_provider!($name() -> $client, interceptor = $sdk_client_interceptor);
         )+
-        $crate::make_lambda_runtime!(internal $handler, telemetry_init = $telemetry_init, trigger = $trigger ; sdk_config_init().await; $($extra_init_code)*);
+        $crate::make_lambda_runtime!(
+            internal
+            $handler,
+            telemetry_init = $telemetry_init,
+            trigger = $trigger,
+            lambda_layer_instrumentor = $lambda_layer_instrumentor ;
+            sdk_config_init().await; $($extra_init_code)*
+        );
     };
     (
         internal
         $handler:path,
         telemetry_init = $telemetry_init:path,
-        trigger = $trigger:expr ;
+        trigger = $trigger:expr,
+        lambda_layer_instrumentor = $lambda_layer_instrumentor:ty ;
         $($code:tt)*
     ) => {
         #[tokio::main]
@@ -315,7 +371,7 @@ macro_rules! make_lambda_runtime {
 
             $crate::lambda::lambda_runtime::Runtime::new($crate::lambda::lambda_runtime::service_fn($handler))
                 .layer(
-                    <$crate::lambda::layer::DefaultTracingLayer<_>>::new(move || {$crate::lambda::macros::default_flush_tracer(&tracer_provider);})
+                    <$crate::lambda::layer::TracingLayer<_, $lambda_layer_instrumentor>>::new(move || {$crate::lambda::macros::default_flush_tracer(&tracer_provider);})
                     .with_trigger($trigger)
                 )
                 .run()
@@ -329,6 +385,8 @@ macro_rules! make_lambda_runtime {
             @find_extra_init_code
             @find_telemetry_init
             @find_trigger
+            @find_sdk_client_interceptor
+            @find_lambda_layer_instrumentor
             [$($($rest)+,)?]
         );
     };

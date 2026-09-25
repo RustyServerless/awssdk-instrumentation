@@ -32,6 +32,9 @@ use aws_smithy_types::config_bag::ConfigBag;
 
 use tracing::Span;
 
+use crate::span_write::SpanWrite;
+use opentelemetry_semantic_conventions::attribute as semco;
+
 use super::{
     DefaultExtractor,
     utils::{SpanPauser, StorableOption},
@@ -46,7 +49,9 @@ use super::{
 ///
 /// Attributes are written to the `tracing::Span` that the AWS SDK creates for
 /// the operation. The `tracing-opentelemetry` bridge then forwards those
-/// attributes to the configured OTel exporter.
+/// attributes to the configured OTel exporter. That SDK span already carries
+/// `rpc.system`, `rpc.service` and `rpc.method` attributes, so the interceptor
+/// only adds `rpc.system.name` and the OTel kind.
 ///
 /// This is the recommended backend for most workloads. It integrates naturally
 /// with the `tracing` ecosystem and allows mixing AWS SDK spans with application
@@ -80,7 +85,7 @@ use super::{
 /// );
 ///
 /// // Attach to an AWS SDK client config:
-/// let dynamo_config = aws_sdk_dynamodb::config::Builder::from(&::aws_config::load_from_env().await)
+/// let dynamo_config = aws_sdk_dynamodb::config::Builder::from(&aws_config::load_from_env().await)
 ///     .interceptor(interceptor)
 ///     .build();
 /// # }
@@ -137,10 +142,14 @@ impl Intercept for TracingInterceptor {
     ) -> Result<(), BoxError> {
         if let Some((_guard, mut span)) = SpanPauser::pause_until(|span| {
             span.metadata()
-                .map(|metadata| metadata.target().contains("::operation::"))
+                .map(|metadata| {
+                    let target = metadata.target();
+                    target.starts_with("aws_sdk_") && target.contains("::operation::")
+                })
                 .unwrap_or_default()
         }) {
             span.record("otel.kind", "client");
+            span.set_attribute(semco::RPC_SYSTEM_NAME, "aws-api");
             self.extractor
                 .read_before_execution(context, cfg, &mut span)?;
 

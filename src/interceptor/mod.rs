@@ -50,38 +50,6 @@
 // Interceptor module — AttributeExtractor trait, DefaultExtractor, ServiceFilter,
 // closure registration, and service dispatch logic.
 
-// Semantic convention constants not yet available in the `opentelemetry-semantic-conventions`
-// crate. Named identically to the upstream pattern so the compiler will error once the
-// crate exports them and we can remove these definitions.
-/// OpenTelemetry semantic convention key for the database system name (`db.system.name`).
-///
-/// Used by service extractors (e.g. [`extract::dynamodb::DynamoDBExtractor`]) to tag spans
-/// with the database technology. Set to `"aws.dynamodb"` for DynamoDB calls.
-///
-/// This constant is defined locally because the upstream
-/// `opentelemetry-semantic-conventions` crate does not yet export it. Once the
-/// upstream crate adds it, this definition will produce a compile error and can
-/// be removed.
-pub const DB_SYSTEM_NAME: &str = "db.system.name";
-
-/// OpenTelemetry semantic convention key for the RPC system name (`rpc.system.name`).
-///
-/// Used by the OTel-native backend interceptor to tag spans with the RPC technology.
-/// Set to `"aws-api"` for all AWS SDK calls.
-///
-/// This constant is defined locally because the upstream
-/// `opentelemetry-semantic-conventions` crate does not yet export it. Once the
-/// upstream crate adds it, this definition will produce a compile error and can
-/// be removed.
-pub const RPC_SYSTEM_NAME: &str = "rpc.system.name";
-/// Compile-time sentinel that will error when `opentelemetry-semantic-conventions` exports
-/// [`DB_SYSTEM_NAME`] or [`RPC_SYSTEM_NAME`], signalling that the local definitions can be removed.
-#[allow(unused)]
-mod _tell_me_when_semconv_have_it {
-    use super::{DB_SYSTEM_NAME, RPC_SYSTEM_NAME};
-    use opentelemetry_semantic_conventions::attribute::*;
-}
-
 pub mod extract;
 mod utils;
 
@@ -145,7 +113,7 @@ pub type DefaultInterceptor = tracing::TracingInterceptor;
 #[cfg(all(feature = "otel-backend", not(feature = "tracing-backend")))]
 pub type DefaultInterceptor = otel::OtelInterceptor;
 
-use aws_smithy_runtime_api::{box_error::BoxError, client::interceptors::context, http};
+pub use aws_smithy_runtime_api::{box_error::BoxError, client::interceptors::context, http};
 use aws_smithy_types::config_bag::ConfigBag;
 use aws_types::{region::Region, request_id::RequestId};
 
@@ -703,7 +671,10 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
 
                 SpanPauser::pause_until(|span| {
                     span.metadata()
-                        .map(|metadata| metadata.target().contains("::operation::"))
+                        .map(|metadata| {
+                            let target = metadata.target();
+                            target.starts_with("aws_sdk_") && target.contains("::operation::")
+                        })
                         .unwrap_or_default()
                 })
                 .ok_or(

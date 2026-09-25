@@ -23,7 +23,6 @@ Out-of-the-box OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust, wit
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#authors">Authors</a></li>
-    <li><a href="#related-projects">Related Projects</a></li>
   </ol>
 </details>
 
@@ -33,7 +32,7 @@ Out-of-the-box OpenTelemetry/X-Ray instrumentation for the AWS SDK for Rust, wit
 
 1. **SDK interceptors** — automatically attach OpenTelemetry semantic-convention attributes to every AWS SDK call (DynamoDB, S3, SQS, and more via user-defined extractors).
 2. **Lambda Tower layer** — create a per-invocation span covering the handler, propagate the X-Ray trace context, track cold-starts, and flush the exporter after each invocation.
-3. **Environment resource detection** — detect whether the process is running on Lambda, ECS, EKS, or EC2 and populate the OTel `Resource` accordingly.
+3. **Environment resource detection** — the `opentelemetry-aws` detectors enabled by your `env-*` features populate the OTel `Resource` with Lambda, ECS, EKS, and EC2 attributes.
 
 The default feature set (`tracing-backend` + `env-lambda` + `extract-dynamodb` + `export-xray`) covers the most common Lambda workload with zero extra configuration.
 
@@ -43,8 +42,8 @@ The default feature set (`tracing-backend` + `env-lambda` + `extract-dynamodb` +
 - Per-invocation Lambda spans with X-Ray trace context propagation and cold-start tracking
 - Built-in attribute extractors for DynamoDB, S3, and SQS
 - Extensible extraction pipeline: register custom `AttributeExtractor` implementations or closure hooks filtered by service/operation
-- Auto-detection of AWS runtime environment (Lambda, ECS, EKS, EC2) for OTel `Resource` population
-- X-Ray ID generation, propagation, and daemon export out of the box
+- AWS environment attributes (Lambda, ECS, EKS, EC2) added to the OTel `Resource` by the `opentelemetry-aws` detectors behind each `env-*` feature
+- X-Ray ID generation and daemon export out of the box
 - `make_lambda_runtime!` macro for zero-boilerplate Lambda setup
 - Two backend options: `tracing` ecosystem integration (default) or direct OTel span management
 
@@ -62,7 +61,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-awssdk-instrumentation = "0.1"
+awssdk-instrumentation = "0.2"
 ```
 
 Or using cargo:
@@ -71,24 +70,34 @@ Or using cargo:
 cargo add awssdk-instrumentation
 ```
 
-The default features (`tracing-backend`, `env-lambda`, `extract-dynamodb`, `export-xray`) are suitable for most Lambda + DynamoDB workloads. See [Feature Flags](#feature-flags) to customise.
+The default features (`tracing-backend`, `env-lambda`, `extract-dynamodb`, `export-xray`) are suitable for most Lambda + DynamoDB workloads. Disable the default features and see [Feature Flags](#feature-flags) to customise.
+
+### Try on AWS 🚀
+
+Want to see the crate in action? [Yak Mania](https://github.com/RustyServerless/yak-mania) is a ready-to-deploy playground on GitHub that sets up a full AWS environment in a few minutes, with two ways in:
+
+- 🎮 A fun little game built on AppSync + Lambda + DynamoDB, generating traces with annotations and metadata — real application tracking on AWS X-Ray, end to end.
+- 📊 A comparative benchmark of Python and Rust on a simple DynamoDB interaction:
+  - Python without instrumentation,
+  - Python with X-Ray (old-school) instrumentation,
+  - Python with ADOT v1 instrumentation,
+  - Python with ADOT v2 instrumentation,
+  - Rust without instrumentation,
+  - Rust with `awssdk-instrumentation`, `tracing-backend`,
+  - Rust with `awssdk-instrumentation`, `otel-backend`.
 
 ## Usage
 
-> **Re-exports.** To minimise the dependencies you need to declare in your own
-> `Cargo.toml`, this crate re-exports every external crate that appears in its
-> public API: `aws-config`, `aws-smithy-runtime-api`, `aws-smithy-types`,
-> `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-semantic-conventions`,
-> plus `tracing` / `tracing-subscriber` / `tracing-opentelemetry` (under
-> `tracing-backend`), `lambda_runtime` (under `env-lambda`), and
-> `opentelemetry-aws` (under `export-xray`). All are available via
-> `awssdk_instrumentation::<crate>`.
+> **Re-exports.** To minimise the dependencies you need to declare in your own `Cargo.toml`, this crate re-exports every external crate that appears in its
+> public API: `aws-config`, `aws-smithy-runtime-api`, `aws-smithy-types`, `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-semantic-conventions`,
+> plus `tracing` / `tracing-subscriber` / `tracing-opentelemetry` (under `tracing-backend`), `lambda_runtime` (under `env-lambda`), and
+> `opentelemetry-aws` (when any `env-*` or `export-xray` feature is enabled). All are available via `awssdk_instrumentation::<crate>`, except `lambda_runtime`, which is
+> re-exported at `awssdk_instrumentation::lambda::lambda_runtime`.
 >
 > You still need to add the following to your own `Cargo.toml`:
 >
 > - The `aws-sdk-*` service crates you use (`aws-sdk-dynamodb`, `aws-sdk-s3`, …).
-> - `tokio` — the `#[tokio::main]` proc-macro emitted by `make_lambda_runtime!`
->   resolves the `tokio` crate by absolute path (`::tokio`), so re-exporting
+> - `tokio` — the `#[tokio::main]` proc-macro emitted by `make_lambda_runtime!` resolves the `tokio` crate by absolute path (`::tokio`), so re-exporting
 >   would not help. Lambda functions in Rust need `tokio` anyway.
 > - `serde_json` (or `serde`) — for typical Lambda event types.
 
@@ -121,54 +130,89 @@ awssdk_instrumentation::make_lambda_runtime!(
 );
 ```
 
+The macro also accepts optional named parameters: `trigger` (the `faas.trigger` value), `telemetry_init` (a custom init function), `extra_init_code` (code to run just before the runtime starts), `sdk_client_interceptor` (an explicit interceptor for the generated clients), and `lambda_layer_instrumentor` (an explicit Tower layer instrumentor).
+
 ### Manual Setup
 
-When you need more control over the telemetry stack, wire the pieces together yourself:
+When you need more control over the telemetry stack, wire the pieces together yourself. As a starting point,
+here is the exact code generated by the expansion of the previous snippet:
 
 ```rust
-use serde_json::Value;
 use awssdk_instrumentation::{
     init::default_telemetry_init,
     interceptor::DefaultInterceptor,
     lambda::{
-        LambdaError, LambdaEvent,
-        lambda_runtime::{Runtime, service_fn},
-        layer::DefaultTracingLayer,
-        OTelFaasTrigger,
+        LambdaError, LambdaEvent, lambda_runtime,
+        layer::{DefaultInstrumentor, OTelFaasTrigger, TracingLayer},
+        macros::default_flush_tracer,
     },
 };
+use serde_json::Value;
 
+// Same Handler
 async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
-    todo!("Do Stuff...");
+    let _resp = dynamodb_client()
+        .get_item()
+        .table_name("orders")
+        .send()
+        .await?;
+    Ok(event.payload)
 }
+
+// This macro sets a OnceCell + Accessor function containing the AWS Credentials Configuration
+// made available and shared by the SDK Clients.
+// It generates the sdk_config_init() function, which should be called once, early in your main.
+awssdk_instrumentation::aws_sdk_config_provider!();
+
+// The macro sets a OnceCell + Accessor function for the
+// DynamoDB client.
+// It uses an "Interceptor", depending on the backend you chose (i.e. `tracing` or `otel`).
+// The Interceptor's role is to hook into the SDK Client interactions to extract informations
+// and add them to the spans (e.g. DynamoDB table name).
+// Generates the dynamodb_client() function that returns a AWS SDK DynamoDB client.
+awssdk_instrumentation::aws_sdk_client_provider!(
+    dynamodb_client() -> aws_sdk_dynamodb::Client,
+    interceptor = DefaultInterceptor::new()
+);
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
-    // Initialise telemetry (sets global tracer provider + tracing subscriber).
+    // This is the default telemetry initialization, can be controlled by the
+    // `telemetry_init` parameter of the macro.
+    // Any function returning the SdkTracerProvider that was made "global"
+    // can be used.
+    //
+    // What the default_telemetry_init() function foes depends on your features.
+    // With `export-xray` and `tracing-backend`, it setups the X-Ray export,
+    // the tracing=>otel translation layer and a console logger that will send
+    // your outputs to stdout.
     let tracer_provider = default_telemetry_init();
 
-    // Build an SDK client with the interceptor attached.
-    // `aws_config` is re-exported by this crate — you can also import it
-    // directly via `awssdk_instrumentation::aws_config`.
-    let sdk_config = aws_config::load_from_env().await;
-    let dynamo = aws_sdk_dynamodb::Client::from_conf(
-        aws_sdk_dynamodb::config::Builder::from(&sdk_config)
-            .interceptor(DefaultInterceptor::new())
-            .build(),
-    );
+    // Created by the aws_sdk_config_provider! macro, retrieve
+    // AWS credentials from the environment, as usual.
+    sdk_config_init().await;
 
-    // Wrap the Lambda runtime with the Tower layer.
-    Runtime::new(service_fn(handler))
+    lambda_runtime::Runtime::new(lambda_runtime::service_fn(handler))
+        // This adds the "tracing" Tower Layer for Lambda
+        // It uses an "Instrumentor", depending on the backend you chose (i.e. `tracing` or `otel`)
         .layer(
-            DefaultTracingLayer::new(move || {
-                let _ = tracer_provider.force_flush();
+            <TracingLayer<_, DefaultInstrumentor>>::new(move || {
+                // This ensures that when your handler finishes,
+                // the traces are flushed to the exporter, i.e. to
+                // the X-Ray daemon.
+                default_flush_tracer(&tracer_provider);
             })
-            .with_trigger(OTelFaasTrigger::Http),
+            // This tells the tracing layer which "Trigger" it should set
+            // on the span that will cover your execution.
+            // Defaults to Http.
+            .with_trigger(OTelFaasTrigger::default()),
         )
         .run()
         .await
 }
 ```
+
+You can of course wire things yourself further, without the provided macros and functions. Read the expanded code.
 
 ### Extending the Extraction Pipeline
 
@@ -192,9 +236,11 @@ interceptor.extractor.register_input_hook(
 For more complex extraction logic — spanning multiple phases or services — implement the `AttributeExtractor` trait instead:
 
 ```rust
-use awssdk_instrumentation::interceptor::{AttributeExtractor, Operation, Service};
+use awssdk_instrumentation::interceptor::{
+    context,
+    AttributeExtractor, DefaultInterceptor, Operation, Service,
+};
 use awssdk_instrumentation::span_write::SpanWrite;
-use aws_smithy_runtime_api::client::interceptors::context;
 
 struct OrdersExtractor;
 
@@ -229,16 +275,16 @@ At least one backend must be enabled (enforced at compile time).
 | Feature           | Default | Description                                                                                                              |
 | ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `tracing-backend` | ✅      | Writes span attributes via `tracing::Span` + `tracing-opentelemetry`. Integrates naturally with the `tracing` ecosystem. |
-| `otel-backend`    |         | Manages OTel spans directly without `tracing`.                                                                           |
+| `otel-backend`    |         | Manages OTel spans directly, so your application can emit spans and events with `opentelemetry` primitives only          |
 
 ### Environment Detection
 
-| Feature      | Default | Description                                                          |
-| ------------ | ------- | -------------------------------------------------------------------- |
-| `env-lambda` | ✅      | Lambda Tower layer, resource detector, `make_lambda_runtime!` macro. |
-| `env-ecs`    |         | ECS resource detector (reads container metadata endpoint).           |
-| `env-eks`    |         | EKS resource detector (reads Kubernetes service account + IMDSv2).   |
-| `env-ec2`    |         | EC2 resource detector (reads IMDSv2).                                |
+| Feature      | Default | Description                                                                                     |
+| ------------ | ------- | ----------------------------------------------------------------------------------------------- |
+| `env-lambda` | ✅      | Lambda Tower layer, `opentelemetry-aws` Lambda resource detector, `make_lambda_runtime!` macro. |
+| `env-ecs`    |         | Enables the `opentelemetry-aws` `EcsResourceDetector`.                                          |
+| `env-eks`    |         | Enables the `opentelemetry-aws` `EksResourceDetector`.                                          |
+| `env-ec2`    |         | Enables the `opentelemetry-aws` `Ec2ResourceDetector`.                                          |
 
 ### Service Attribute Extraction
 
@@ -250,30 +296,35 @@ At least one backend must be enabled (enforced at compile time).
 
 ### Export
 
-| Feature       | Default | Description                                                                  |
-| ------------- | ------- | ---------------------------------------------------------------------------- |
-| `export-xray` | ✅      | X-Ray ID generator, propagator, and daemon exporter via `opentelemetry-aws`. |
+| Feature                       | Default | Description                                                                                                                                                       |
+| ----------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `export-xray`                 | ✅      | X-Ray ID generator and daemon exporter via `opentelemetry-aws`.                                                                                                   |
+| `xray-no-lambda-node-nesting` |         | Emit the Lambda invocation span as `server` kind so its X-Ray segment appears as a separate `AWS::Lambda::Function` node instead of nested under the service one. |
 
-When `export-xray` is enabled, the `opentelemetry_aws` crate is re-exported at the crate root so you can access the X-Ray propagator and exporter types directly.
+When a feature that depends on `opentelemetry-aws` is enabled, the `opentelemetry_aws` crate is re-exported at the crate root, making the X-Ray propagator available for usage.
 
 ## Configuration
 
 ### X-Ray Annotations and Metadata
 
-When `export-xray` is enabled, two environment variables control how span attributes are mapped to X-Ray segments:
+When `export-xray` is enabled, every span attribute is exported as metadata by default.
 
-| Variable           | Effect                                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `XRAY_ANNOTATIONS` | Set to `"all"` to index every attribute as an X-Ray annotation, or to a space-separated list of attribute keys. |
-| `XRAY_METADATA`    | Set to `"all"` to include every attribute as X-Ray metadata, or to a space-separated list of attribute keys.    |
+Additionaly, two environment variables control how span attributes are mapped to X-Ray segments:
+
+| Variable           | Effect                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `XRAY_ANNOTATIONS` | Set to `"all"` to index every attribute as an X-Ray annotation, or to a space-separated list of attribute keys.                                                          |
+| `XRAY_METADATA`    | Set to a space-separated list of attribute keys to restrict metadata to those keys. Defining this variable with an empty value prevents the default export-all behavior. |
+
+Note that attributes prefixed with `annotation.` or `metadata.` are routed according to their prefix regardless of these variables.
 
 ### Sampling Strategy
 
-The default sampler is `ParentBased(AlwaysOff)` when `env-lambda` is enabled — Lambda controls sampling via the X-Ray trace header. Outside Lambda, the default is `ParentBased(AlwaysOn)`.
+The default sampler is `ParentBased(AlwaysOff)` when the `env-lambda` feature is enabled, and `ParentBased(AlwaysOn)` when it is disabled. The choice is made at compile time, not from the runtime environment.
 
 ### Logging
 
-Console logging is driven by the `RUST_LOG` environment variable (via `tracing-subscriber`'s `EnvFilter`). Logs are emitted as structured JSON to stdout, suitable for CloudWatch Logs ingestion.
+With `tracing-backend` enabled, console logging is driven by the `RUST_LOG` environment variable (via `tracing-subscriber`'s `EnvFilter`). Logs are emitted as structured JSON to stdout, suitable for CloudWatch Logs ingestion. With `otel-backend` only, no console layer is installed.
 
 ### API Documentation
 
@@ -299,11 +350,13 @@ Implement the `AttributeExtractor` trait and register it on the interceptor's `e
 
 **Do I need to add `opentelemetry` or `tracing` to my own `Cargo.toml`?**
 
-No — both are re-exported. Reach them via `awssdk_instrumentation::opentelemetry` and `awssdk_instrumentation::tracing` (the latter requires `tracing-backend`, which is on by default). The same applies to `tracing-subscriber`, `tracing-opentelemetry`, `opentelemetry_sdk`, and `opentelemetry-semantic-conventions`. If you prefer adding them as direct dependencies for shorter `use` paths, that works too.
+No — both are re-exported. Reach them via `awssdk_instrumentation::opentelemetry` and `awssdk_instrumentation::tracing`. Note that `tracing`, `tracing-subscriber` and `tracing-opentelemetry` are only re-exported under the `tracing-backend` feature (on by default), so a build that enables `otel-backend` alone would need its own `tracing` dependency to use it. `opentelemetry_sdk` and `opentelemetry-semantic-conventions` are always re-exported. If you prefer adding them as direct dependencies for shorter `use` paths, that works too.
 
 **Can I use this crate outside of Lambda?**
 
-Yes. The Lambda-specific functionality is behind the `env-lambda` feature flag. Disable it and use the interceptor directly with any AWS SDK client. The environment detectors (`env-ecs`, `env-eks`, `env-ec2`) populate the OTel `Resource` for other AWS compute environments.
+Yes. The Lambda-specific functionality is behind the `env-lambda` feature flag. You can disable it and use the other environment
+detectors features (`env-ecs`, `env-eks`, `env-ec2`). The AWS SDK instrumentation is independent of these features and can be used
+in any application using the AWS SDK for Rust.
 
 ## Contributing
 
@@ -316,12 +369,5 @@ Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information
 ## Authors
 
 - Jérémie RODON ([@JeremieRodon](https://github.com/JeremieRodon)) [![LinkedIn](https://img.shields.io/badge/linkedin-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/JeremieRodon) — [RustyServerless](https://github.com/RustyServerless) [rustysl.com](https://rustysl.com/index.html?from=github-lambda-appsync)
-
-## Related Projects
-
-- [opentelemetry-rust](https://github.com/open-telemetry/opentelemetry-rust) — The OpenTelemetry SDK for Rust
-- [opentelemetry-rust-contrib](https://github.com/open-telemetry/opentelemetry-rust-contrib) — Community-maintained OTel exporters and propagators (X-Ray, etc.)
-- [aws-sdk-rust](https://github.com/awslabs/aws-sdk-rust) — The AWS SDK for Rust
-- [lambda_runtime](https://github.com/awslabs/aws-lambda-rust-runtime) — The Rust runtime for AWS Lambda
 
 If you find this crate useful, please star the repository and share your feedback!

@@ -11,8 +11,9 @@
 //! 2. **Lambda Tower layer** — create a per-invocation span covering the handler,
 //!    propagate the X-Ray trace context, track cold-starts, and flush the
 //!    exporter after each invocation.
-//! 3. **Environment resource detection** — detect whether the process is running
-//!    on Lambda, ECS, EKS, or EC2 and populate the OTel [`Resource`] accordingly.
+//! 3. **Environment resource detection** — the `opentelemetry-aws` detectors
+//!    enabled by your `env-*` features populate the OTel [`Resource`] with
+//!    Lambda, ECS, EKS, and EC2 attributes.
 //!
 //! The default feature set
 //! (`tracing-backend` + `env-lambda` + `extract-dynamodb` + `export-xray`)
@@ -105,21 +106,12 @@
 //! The [`lambda`] module (feature `env-lambda`) provides:
 //!
 //! - [`lambda::layer::TracingLayer`] — a Tower `Layer` that wraps the Lambda
-//!   runtime service, creates a span per invocation, and flushes the exporter
-//!   when the invocation future drops.
+//!   runtime service, creates an `Invocation` span per invocation (nested under
+//!   the `AWS::Lambda::Function` X-Ray node by default), and flushes the
+//!   exporter when the invocation future drops.
 //! - [`make_lambda_runtime!`] — a macro that generates a complete `main()`
 //!   function: telemetry init, SDK config/client singletons, Tower layer setup,
 //!   and `lambda_runtime::Runtime::run()`.
-//!
-//! ## Resource detection
-//!
-//! [`env::default_resource()`] probes the environment at startup and returns an
-//! OTel [`Resource`] populated with the appropriate semantic-convention
-//! attributes. It tries Lambda first (if feature `env-lambda`),
-//! then ECS (if feature `env-ecs`),
-//! then EKS (if feature `env-eks`),
-//! then EC2 (if feature `env-ec2`),
-//! and then falls back to a minimal `cloud.provider = aws` resource.
 //!
 //! ## Telemetry initialisation
 //!
@@ -185,16 +177,16 @@
 //! | Feature           | Default | Description |
 //! |-------------------|---------|-------------|
 //! | `tracing-backend` | ✅      | Writes span attributes via `tracing::Span` + `tracing-opentelemetry` |
-//! | `otel-backend`    |         | Manages OTel spans directly without `tracing` |
+//! | `otel-backend`    |         | Manages OTel spans directly, so your application can emit spans and events with `opentelemetry` primitives only |
 //!
 //! ## Environment detection
 //!
 //! | Feature     | Default | Description |
 //! |-------------|---------|-------------|
-//! | `env-lambda`| ✅      | Lambda Tower layer, resource detector, `make_lambda_runtime!` |
-//! | `env-ecs`   |         | ECS resource detector (reads container metadata endpoint) |
-//! | `env-eks`   |         | EKS resource detector (reads k8s service account + IMDS) |
-//! | `env-ec2`   |         | EC2 resource detector (reads IMDSv2) |
+//! | `env-lambda`| ✅      | Lambda Tower layer, `opentelemetry-aws` Lambda resource detector, `make_lambda_runtime!` |
+//! | `env-ecs`   |         | Enables the `opentelemetry-aws` `EcsResourceDetector` |
+//! | `env-eks`   |         | Enables the `opentelemetry-aws` `EksResourceDetector` |
+//! | `env-ec2`   |         | Enables the `opentelemetry-aws` `Ec2ResourceDetector` |
 //!
 //! ## Service attribute extraction
 //!
@@ -206,13 +198,16 @@
 //!
 //! ## Export
 //!
-//! | Feature       | Default | Description |
-//! |---------------|---------|-------------|
-//! | `export-xray` | ✅      | X-Ray ID generator, propagator, and daemon exporter via `opentelemetry-aws` |
+//! | Feature                       | Default | Description |
+//! |-------------------------------|---------|-------------|
+//! | `export-xray`                 | ✅      | X-Ray ID generator and daemon exporter via `opentelemetry-aws` |
+//! | `xray-no-lambda-node-nesting` |         | Emit the Lambda invocation span as `server` kind so its X-Ray segment is a separate `AWS::Lambda::Function` node instead of nested under the service one |
 //!
-//! When `export-xray` is enabled, the `opentelemetry_aws` crate is re-exported
-//! at the crate root so you can access the X-Ray propagator and exporter types
-//! directly.
+//! When any feature that depends on `opentelemetry-aws` is enabled, the
+//! `opentelemetry_aws` crate is re-exported at the crate root.
+//!
+//! NB: This makes the X-Ray propagator available for usage, though it is not
+//! used by the default opentelemetry_init function.
 //!
 //! # Re-exported crates
 //!
@@ -247,10 +242,10 @@
 //! - [`lambda::LambdaError`] / [`lambda::LambdaEvent`] — convenience aliases
 //!   for `lambda_runtime::Error` and `lambda_runtime::LambdaEvent`.
 //!
-//! Re-exported when feature `export-xray` is enabled (the default):
+//! Re-exported when any `env-*` or `export-xray` feature is enabled:
 //!
-//! - [`opentelemetry_aws`] — for the X-Ray ID generator, propagator, and
-//!   daemon exporter types.
+//! - [`opentelemetry_aws`] — makes the `opentelemetry-aws` types available
+//!   directly, including the X-Ray propagator for usage.
 //!
 //! ## Crates you still need to add as direct dependencies
 //!
@@ -274,12 +269,17 @@ pub mod interceptor;
 #[cfg(feature = "env-lambda")]
 pub mod lambda;
 
-pub mod env;
 pub mod span_write;
 
 pub mod init;
 
-#[cfg(feature = "export-xray")]
+#[cfg(any(
+    feature = "env-ec2",
+    feature = "env-ecs",
+    feature = "env-eks",
+    feature = "env-lambda",
+    feature = "export-xray"
+))]
 pub use opentelemetry_aws;
 
 #[cfg(feature = "tracing-backend")]

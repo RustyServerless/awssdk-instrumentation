@@ -84,8 +84,8 @@ impl core::str::FromStr for XRayTraceHeader {
 /// event triggers your Lambda function. The value is set on the per-invocation
 /// span as the `faas.trigger` attribute.
 ///
-/// The default variant is [`Datasource`], which is appropriate for Lambda
-/// functions that read from or write to a data store such as DynamoDB or S3.
+/// The default variant is [`Http`], which is appropriate for Lambda
+/// functions behind API Gateway, Function URL or AppSync.
 ///
 /// See the [OTel FaaS attributes registry](https://opentelemetry.io/docs/specs/semconv/attributes-registry/faas/)
 /// for the full specification.
@@ -103,19 +103,19 @@ impl core::str::FromStr for XRayTraceHeader {
 /// ```
 ///
 /// [`TracingLayer::with_trigger`]: crate::lambda::layer::TracingLayer::with_trigger
-/// [`Datasource`]: OTelFaasTrigger::Datasource
+/// [`Http`]: OTelFaasTrigger::Http
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub enum OTelFaasTrigger {
     /// A response to a data source operation such as a database or filesystem read/write.
     ///
-    /// This is the default. Use it for Lambda functions triggered by DynamoDB
+    /// Use it for Lambda functions triggered by DynamoDB
     /// Streams, S3 events, or other data-store events.
-    #[default]
     Datasource,
     /// A response to an inbound HTTP request.
     ///
-    /// Use this for Lambda functions fronted by API Gateway or a Function URL.
+    /// This is the default. Use this for Lambda functions fronted by API Gateway or a Function URL.
+    #[default]
     Http,
     /// A function invoked when messages are sent to a messaging system.
     ///

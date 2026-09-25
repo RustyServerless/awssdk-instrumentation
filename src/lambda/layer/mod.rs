@@ -20,7 +20,15 @@
 //! default backend instrumentor, which is the most convenient way to construct
 //! the layer.
 //!
-//! ## Per-invocation span attributes
+//! ## Per-invocation span
+//!
+//! The invocation span is named `Invocation` and has `internal` kind by
+//! default. This makes the X-Ray trace map nest the application spans under the
+//! `AWS::Lambda::Function` node emitted by the Lambda service, alongside the
+//! service-provided `Init` and `Overhead` sub-segments. Enabling the
+//! `xray-no-lambda-node-nesting` feature switches the span to `server` kind: the
+//! X-Ray map then shows a second `AWS::Lambda::Function` node as a child of the
+//! service one, with the function name.
 //!
 //! The layer automatically sets the following OTel attributes on each
 //! invocation span:
@@ -28,11 +36,14 @@
 //! - `faas.trigger` — from [`OTelFaasTrigger`] (default: `Datasource`)
 //! - `faas.invocation_id` — Lambda request ID
 //! - `faas.coldstart` — `true` for the first invocation
-//! - `cloud.account.id` — extracted from the invoked function ARN
+//! - `service.name` — the Lambda function name (makes the opentelemetry-aws X-Ray
+//!   translator correctly identify the name of the node in case
+//!   `xray-no-lambda-node-nesting` feature is enabled)
 //! - `cloud.resource_id` — the invoked function ARN
 //!
 //! When the `_X_AMZN_TRACE_ID` header is present, the X-Ray trace context is
-//! propagated into the span.
+//! propagated into the span and its trace ID is recorded as the `xray_trace_id`
+//! attribute.
 
 mod utils;
 
@@ -69,8 +80,8 @@ use crate::span_write::SpanWrite;
 #[derive(Debug)]
 pub struct InvocationContext {
     xray_trace_header: Option<XRayTraceHeader>,
+    function_name: String,
     function_arn: String,
-    account_id: String,
     request_id: String,
     trigger: OTelFaasTrigger,
     is_coldstart: bool,
@@ -162,9 +173,10 @@ pub type DefaultTracingLayer<F> = TracingLayer<F, DefaultInstrumentor>;
 ///
 /// 1. Parses the `_X_AMZN_TRACE_ID` header and propagates the X-Ray trace
 ///    context into the new span.
-/// 2. Creates a `SERVER`-kind span named after the Lambda function with the
-///    `faas.trigger`, `faas.invocation_id`, `faas.coldstart`,
-///    `cloud.account.id`, and `cloud.resource_id` attributes.
+/// 2. Creates an `Invocation` span (`internal` kind by default, `server` kind
+///    with the `xray-no-lambda-node-nesting` feature) carrying the
+///    `faas.trigger`, `faas.invocation_id`, `faas.coldstart`, `service.name`,
+///    and `cloud.resource_id` attributes.
 /// 3. Wraps the invocation future in a [`FlushedFuture`] that calls the flush
 ///    callback when the future drops, ensuring the exporter is flushed even
 ///    when the invocation is cancelled.
@@ -197,7 +209,7 @@ impl<F: Fn() + Clone, I: Instrumentor> TracingLayer<F, I> {
     /// [`FlushedFuture`] after each invocation completes or is cancelled. Use
     /// it to call `tracer_provider.force_flush()`.
     ///
-    /// The `faas.trigger` attribute defaults to [`OTelFaasTrigger::Datasource`].
+    /// The `faas.trigger` attribute defaults to [`OTelFaasTrigger::Http`].
     /// Call [`with_trigger`] to override it.
     ///
     /// # Examples
@@ -243,7 +255,7 @@ impl<S, F: Fn() + Clone, I: Instrumentor> Layer<S> for TracingLayer<F, I> {
             flush_fn: self.flush_fn.clone(),
             coldstart: true,
             trigger: self.trigger,
-            account_id: None,
+            function_name: None,
             _phantom: PhantomData,
         }
     }
@@ -265,7 +277,7 @@ pub struct TracingService<I: Instrumentor, S, F> {
     flush_fn: F,
     coldstart: bool,
     trigger: OTelFaasTrigger,
-    account_id: Option<String>,
+    function_name: Option<String>,
     _phantom: PhantomData<I>,
 }
 /// Implements [`Service<LambdaInvocation>`] for [`TracingService`].
@@ -289,18 +301,6 @@ where
     }
 
     fn call(&mut self, req: LambdaInvocation) -> Self::Future {
-        let account_id = self
-            .account_id
-            .get_or_insert_with(|| {
-                req.context
-                    .invoked_function_arn
-                    .split(':')
-                    .nth(4)
-                    .map(|v| v.to_owned())
-                    .unwrap_or_default()
-            })
-            .to_owned();
-
         let xray_trace_header = req.context.xray_trace_id.as_ref().and_then(|trace_id| {
             trace_id
                 .parse()
@@ -308,11 +308,23 @@ where
                 .ok()
         });
 
+        // Retrieve and store the function name
+        // This is ok because AWS Lambda configuration change will renew the sandbox,
+        // which guarantee that these values cannot be stalled in practice
+        let function_name = self
+            .function_name
+            .get_or_insert(
+                std::env::var("AWS_LAMBDA_FUNCTION_NAME")
+                    .ok()
+                    .unwrap_or_default(),
+            )
+            .to_owned();
+
         let invocation_context = InvocationContext {
             xray_trace_header,
-            function_arn: req.context.invoked_function_arn.to_owned(),
-            account_id,
-            request_id: req.context.request_id.to_owned(),
+            function_name,
+            function_arn: req.context.invoked_function_arn.clone(),
+            request_id: req.context.request_id.clone(),
             trigger: self.trigger,
             is_coldstart: self.coldstart,
         };

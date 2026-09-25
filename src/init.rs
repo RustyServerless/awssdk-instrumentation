@@ -30,8 +30,13 @@
 //!
 //! - `XRAY_ANNOTATIONS` — set to `"all"` to index every attribute as an
 //!   annotation, or to a space-separated list of attribute keys.
-//! - `XRAY_METADATA` — same format; controls which attributes go into X-Ray
-//!   metadata.
+//! - `XRAY_METADATA` — set to a space-separated list of attribute keys to
+//!   restrict metadata to those keys. When unset, every attribute is exported
+//!   as metadata; an empty value disables default metadata export.
+//!
+//! Note that regardless of this variables, attributes defined by your application with the
+//! `annotation.` and `metadata.` prefixes will be added to the relevant category. See
+//! [`SegmentTranslator`](opentelemetry_aws::xray_exporter::SegmentTranslator) to learn more.
 //!
 //! ## Convenience macros
 //!
@@ -52,13 +57,15 @@
 // user overrides (span processor, exporter, resource, propagator).
 
 use opentelemetry::{global, trace::Tracer as OtelTracer};
-use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
-#[cfg(feature = "tracing-backend")]
-use tracing::Subscriber;
+use opentelemetry_sdk::{
+    Resource,
+    trace::{Sampler, SdkTracerProvider},
+};
+
+use tracing_subscriber::util::SubscriberInitExt;
+
 #[cfg(feature = "tracing-backend")]
 use tracing_subscriber::{Layer, registry::LookupSpan};
-
-use crate::env::default_resource;
 
 /// Environment variable controlling which span attributes are indexed as X-Ray annotations.
 ///
@@ -66,7 +73,7 @@ use crate::env::default_resource;
 const ANNOTATION_ATTRIBUTES_ENV_VAR: &str = "XRAY_ANNOTATIONS";
 /// Environment variable controlling which span attributes are stored as X-Ray metadata.
 ///
-/// Set to `"all"` to include every attribute, or to a space-separated list of attribute keys.
+/// Set to a space-separated list of attribute keys to only include listed attributes instead of all of them.
 const METADATA_ATTRIBUTES_ENV_VAR: &str = "XRAY_METADATA";
 
 /// Default sampler: `AlwaysOff` under `env-lambda` (Lambda controls sampling via X-Ray header),
@@ -84,41 +91,44 @@ const DEFAULT_SAMPLING_STRATEGY: Sampler = if cfg!(feature = "env-lambda") {
 /// 1. Builds an [`SdkTracerProvider`] via [`default_tracer_provider`].
 /// 2. Registers it as the global OTel provider with
 ///    [`opentelemetry::global::set_tracer_provider`].
-/// 3. When `tracing-backend` is enabled, installs a `tracing-subscriber` with
-///    a JSON console layer (driven by `RUST_LOG`) and a `tracing-opentelemetry`
-///    bridge layer.
+/// 3. Install the [`Registry`] tracing subscriber
+/// 4. When `tracing-backend` is enabled, adds a JSON console layer
+///    (driven by `RUST_LOG`) and a `tracing-opentelemetry` bridge layer
+///    to the [`Registry`] tracing subscriber.
 ///
-/// Call this once at the start of your Lambda handler's `main` function, before
-/// creating any AWS SDK clients. The returned provider must be kept alive for
-/// the duration of the process; pass it to the flush callback in
-/// [`layer::TracingLayer`].
+/// Call this once at the start of your `main` function, before creating any
+/// AWS SDK clients. The returned provider must be kept alive for the duration
+/// of the process; pass it to the flush callback in [`layer::TracingLayer`].
 ///
 /// For more control over the subscriber stack, use [`default_tracer_provider`]
 /// and compose the layers yourself with [`default_tracing_otel_layer`] and
 /// [`default_tracing_console_layer`].
 ///
 /// [`layer::TracingLayer`]: crate::lambda::layer::TracingLayer
+/// [`Registry`]: tracing_subscriber::Registry
 pub fn default_telemetry_init() -> SdkTracerProvider {
     let tracer_provider = default_tracer_provider();
     global::set_tracer_provider(tracer_provider.clone());
 
+    // Use the tracing subscriber `Registry`, or any other subscriber that
+    // impls `LookupSpan` so tracing spans are always available for the
+    // SDK client interceptor.
+    // This is unfortunately needed in order to extract Service and Operation.
+    let registry = tracing_subscriber::registry();
+
     #[cfg(feature = "tracing-backend")]
-    {
-        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    let registry = {
+        use tracing_subscriber::layer::SubscriberExt;
 
         let tracer = global::tracer(env!("CARGO_PKG_NAME"));
         let otel_layer = default_tracing_otel_layer(tracer);
 
-        // Initialize tracing
         let console_layer = default_tracing_console_layer();
 
-        // Use the tracing subscriber `Registry`, or any other subscriber
-        // that impls `LookupSpan`
-        tracing_subscriber::registry()
-            .with(otel_layer)
-            .with(console_layer)
-            .init();
-    }
+        registry.with(otel_layer).with(console_layer)
+    };
+
+    registry.init();
 
     tracer_provider
 }
@@ -130,11 +140,24 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
 /// - **Sampler**: `ParentBased(AlwaysOff)` when `env-lambda` is enabled (Lambda
 ///   controls sampling via the X-Ray trace header), or `ParentBased(AlwaysOn)`
 ///   otherwise.
-/// - **Resource**: auto-detected via [`crate::env::default_resource`].
+/// - **Resource**: auto-detected via [`opentelemetry_aws::detector`] depending on the `env-*` features you enable.
 /// - **Exporter** (when `export-xray` is enabled): an X-Ray daemon exporter
-///   with an X-Ray ID generator. The `XRAY_ANNOTATIONS` and `XRAY_METADATA`
-///   environment variables control which span attributes are indexed as X-Ray
-///   annotations or metadata.
+///   with an X-Ray ID generator.
+///
+/// # Environment Variables
+///
+/// The attributes added to the X-Ray segments by the X-Ray Exporter (if enabled) can
+/// be controlled by environment variables.
+///
+/// The XRAY_ANNOTATIONS environment variable control which span attributes are indexed
+/// as X-Ray annotations.
+///
+/// Every other attributes will be added as X-Ray metadata by default, unless the XRAY_METADATA
+/// environment variable is defined, in which case only listed attributes will be added.
+///
+/// Note that regardless of this variables, attributes defined by your application with the
+/// `annotation.` and `metadata.` prefixes will be added to the relevant category. See
+/// [`SegmentTranslator`](opentelemetry_aws::xray_exporter::SegmentTranslator) to learn more.
 ///
 /// Use this function instead of [`default_telemetry_init`] when you need to
 /// compose the `tracing-subscriber` stack yourself.
@@ -149,9 +172,24 @@ pub fn default_telemetry_init() -> SdkTracerProvider {
 /// global::set_tracer_provider(tracer_provider.clone());
 /// ```
 pub fn default_tracer_provider() -> SdkTracerProvider {
+    let resource_builder = Resource::builder();
+    #[cfg(feature = "env-lambda")]
+    let resource_builder = resource_builder.with_detector(Box::new(
+        opentelemetry_aws::detector::LambdaResourceDetector,
+    ));
+    #[cfg(feature = "env-ecs")]
+    let resource_builder =
+        resource_builder.with_detector(Box::new(opentelemetry_aws::detector::EcsResourceDetector));
+    #[cfg(feature = "env-eks")]
+    let resource_builder =
+        resource_builder.with_detector(Box::new(opentelemetry_aws::detector::EksResourceDetector));
+    #[cfg(feature = "env-ec2")]
+    let resource_builder =
+        resource_builder.with_detector(Box::new(opentelemetry_aws::detector::Ec2ResourceDetector));
+
     let builder = SdkTracerProvider::builder()
         .with_sampler(Sampler::ParentBased(Box::new(DEFAULT_SAMPLING_STRATEGY)))
-        .with_resource(default_resource());
+        .with_resource(resource_builder.build());
 
     #[cfg(feature = "export-xray")]
     let builder = {
@@ -174,16 +212,9 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
             Err(_) => translator,
         };
         let translator = match std::env::var(METADATA_ATTRIBUTES_ENV_VAR) {
-            Ok(value) => {
-                if value == "all" {
-                    translator.metadata_all_attrs()
-                } else {
-                    translator.with_metadata_attrs(
-                        value.split(" ").map(|attr_key| attr_key.trim().to_owned()),
-                    )
-                }
-            }
-            Err(_) => translator,
+            Ok(value) => translator
+                .with_metadata_attrs(value.split(" ").map(|attr_key| attr_key.trim().to_owned())),
+            Err(_) => translator.metadata_all_attrs(),
         };
 
         builder
@@ -200,7 +231,7 @@ pub fn default_tracer_provider() -> SdkTracerProvider {
 ///
 /// The layer is configured to forward only spans and events at `INFO` level or
 /// above, plus the AWS SDK operation spans (identified by their target
-/// containing `::operation::`) and the Lambda runtime layer span (target ending
+/// `aws_sdk_*::operation::*`) and the Lambda runtime layer span (target ending
 /// with `::tracing_runtime_layer`). This keeps the OTel trace focused on
 /// meaningful SDK and invocation spans while suppressing noisy debug events.
 ///
@@ -228,7 +259,7 @@ pub fn default_tracing_otel_layer<S, Tracer>(tracer: Tracer) -> impl Layer<S>
 where
     Tracer: OtelTracer + 'static,
     Tracer::Span: Send + Sync,
-    S: Subscriber + for<'any> LookupSpan<'any>,
+    S: tracing::Subscriber + for<'any> LookupSpan<'any>,
 {
     use tracing::Level;
     use tracing_subscriber::filter::filter_fn;
@@ -239,7 +270,8 @@ where
         .with_filter(filter_fn(|metadata| {
             *metadata.level() <= Level::INFO
                 || metadata.is_span()
-                    && (metadata.target().contains("::operation::")
+                    && (metadata.target().starts_with("aws_sdk_")
+                        && metadata.target().contains("::operation::")
                         || metadata.target().ends_with("::tracing_runtime_layer"))
         }))
 }
@@ -268,7 +300,7 @@ where
 #[cfg(feature = "tracing-backend")]
 pub fn default_tracing_console_layer<S>() -> impl Layer<S>
 where
-    S: Subscriber + for<'any> LookupSpan<'any>,
+    S: tracing::Subscriber + for<'any> LookupSpan<'any>,
 {
     use tracing_subscriber::{filter::EnvFilter, fmt};
     fmt::layer()
@@ -356,9 +388,6 @@ macro_rules! aws_sdk_config_provider {
 ///
 /// A compile-time assertion verifies that the generated function is declared at
 /// the crate root.
-///
-/// This macro is typically invoked indirectly through [`make_lambda_runtime!`]
-/// when you pass client declarations to that macro.
 ///
 /// # Examples
 ///
