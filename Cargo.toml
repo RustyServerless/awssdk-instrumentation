@@ -1,6 +1,6 @@
 [package]
 name = "awssdk-instrumentation"
-version = "0.4.1"
+version = "0.4.2"
 rust-version = "1.88.0"
 edition = "2024"
 authors = ["Jérémie RODON <jeremie.rodon@gmail.com>"]
@@ -106,3 +106,6 @@ opentelemetry_sdk = { version = "0.33", features = ["testing"] }
 aws-smithy-http-client = { version = "1", features = ["test-util"] }
 http = "1"
 trybuild = "1.0"
+
+[package.metadata.docs.rs]
+all-features = true

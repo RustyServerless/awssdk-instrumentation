@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.2...HEAD
+
+## [0.4.2] - 2026-11-15
+
+### Fixed
+
+- docs.rs builds failed for 0.4.0 and 0.4.1. docs.rs now builds the documentation with all features enabled, so items gated behind non-default features (`otel-backend`, `extract-s3`, `extract-sqs`, …) are documented.
+
+[0.4.2]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.1...v0.4.2
 
 ## [0.4.1] - 2026-11-15
 
