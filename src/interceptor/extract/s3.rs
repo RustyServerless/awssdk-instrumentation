@@ -88,23 +88,23 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
                 let i = input
                     .downcast_ref::<GetObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_part_number(span, i.part_number());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_part_number(i.part_number(), span);
             }
             "PutObject" => {
                 let i = input
                     .downcast_ref::<PutObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
             }
             "DeleteObject" => {
                 let i = input
                     .downcast_ref::<DeleteObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
             }
             "DeleteObjects" => {
                 // TODO: The OTel semconv defines `aws.s3.delete` for the delete request
@@ -115,135 +115,135 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
                 let i = input
                     .downcast_ref::<DeleteObjectsInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "HeadObject" => {
                 let i = input
                     .downcast_ref::<HeadObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_part_number(span, i.part_number());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_part_number(i.part_number(), span);
             }
             "CopyObject" => {
                 let i = input
                     .downcast_ref::<CopyObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_copy_source(span, i.copy_source());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_copy_source(i.copy_source(), span);
             }
             "CreateMultipartUpload" => {
                 let i = input
                     .downcast_ref::<CreateMultipartUploadInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
             }
             "CompleteMultipartUpload" => {
                 let i = input
                     .downcast_ref::<CompleteMultipartUploadInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_upload_id(span, i.upload_id());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_upload_id(i.upload_id(), span);
             }
             "AbortMultipartUpload" => {
                 let i = input
                     .downcast_ref::<AbortMultipartUploadInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_upload_id(span, i.upload_id());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_upload_id(i.upload_id(), span);
             }
             "UploadPart" => {
                 let i = input
                     .downcast_ref::<UploadPartInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_upload_id(span, i.upload_id());
-                set_part_number(span, i.part_number());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_upload_id(i.upload_id(), span);
+                set_part_number(i.part_number(), span);
             }
             "UploadPartCopy" => {
                 let i = input
                     .downcast_ref::<UploadPartCopyInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_copy_source(span, i.copy_source());
-                set_upload_id(span, i.upload_id());
-                set_part_number(span, i.part_number());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_copy_source(i.copy_source(), span);
+                set_upload_id(i.upload_id(), span);
+                set_part_number(i.part_number(), span);
             }
             "ListParts" => {
                 let i = input
                     .downcast_ref::<ListPartsInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
-                set_upload_id(span, i.upload_id());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
+                set_upload_id(i.upload_id(), span);
             }
             "ListObjectsV2" => {
                 let i = input
                     .downcast_ref::<ListObjectsV2Input>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "ListObjects" => {
                 let i = input
                     .downcast_ref::<ListObjectsInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "HeadBucket" => {
                 let i = input
                     .downcast_ref::<HeadBucketInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "CreateBucket" => {
                 let i = input
                     .downcast_ref::<CreateBucketInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "DeleteBucket" => {
                 let i = input
                     .downcast_ref::<DeleteBucketInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "GetBucketLocation" => {
                 let i = input
                     .downcast_ref::<GetBucketLocationInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "PutBucketLifecycleConfiguration" => {
                 let i = input
                     .downcast_ref::<PutBucketLifecycleConfigurationInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "GetBucketPolicy" => {
                 let i = input
                     .downcast_ref::<GetBucketPolicyInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
+                set_bucket(i.bucket(), span);
             }
             "RestoreObject" => {
                 let i = input
                     .downcast_ref::<RestoreObjectInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
             }
             "SelectObjectContent" => {
                 let i = input
                     .downcast_ref::<SelectObjectContentInput>()
                     .expect("correct type");
-                set_bucket(span, i.bucket());
-                set_key(span, i.key());
+                set_bucket(i.bucket(), span);
+                set_key(i.key(), span);
             }
             // Do nothing for other operations
             _ => {}
@@ -252,35 +252,35 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for S3Extractor {
 }
 
 /// Sets the `aws.s3.bucket` attribute if present.
-fn set_bucket(span: &mut impl SpanWrite, bucket: Option<&str>) {
+fn set_bucket(bucket: Option<&str>, span: &mut impl SpanWrite) {
     if let Some(bucket) = bucket {
         span.set_attribute(semco::AWS_S3_BUCKET, bucket.to_owned());
     }
 }
 
 /// Sets the `aws.s3.key` attribute if present.
-fn set_key(span: &mut impl SpanWrite, key: Option<&str>) {
+fn set_key(key: Option<&str>, span: &mut impl SpanWrite) {
     if let Some(key) = key {
         span.set_attribute(semco::AWS_S3_KEY, key.to_owned());
     }
 }
 
 /// Sets the `aws.s3.copy_source` attribute if present.
-fn set_copy_source(span: &mut impl SpanWrite, copy_source: Option<&str>) {
+fn set_copy_source(copy_source: Option<&str>, span: &mut impl SpanWrite) {
     if let Some(copy_source) = copy_source {
         span.set_attribute(semco::AWS_S3_COPY_SOURCE, copy_source.to_owned());
     }
 }
 
 /// Sets the `aws.s3.upload_id` attribute if present.
-fn set_upload_id(span: &mut impl SpanWrite, upload_id: Option<&str>) {
+fn set_upload_id(upload_id: Option<&str>, span: &mut impl SpanWrite) {
     if let Some(upload_id) = upload_id {
         span.set_attribute(semco::AWS_S3_UPLOAD_ID, upload_id.to_owned());
     }
 }
 
 /// Sets the `aws.s3.part_number` attribute if present.
-fn set_part_number(span: &mut impl SpanWrite, part_number: Option<i32>) {
+fn set_part_number(part_number: Option<i32>, span: &mut impl SpanWrite) {
     if let Some(part_number) = part_number {
         span.set_attribute(
             semco::AWS_S3_PART_NUMBER,
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn set_bucket_with_value() {
         let mut span = TestSpan::new();
-        set_bucket(&mut span, Some("my-bucket"));
+        set_bucket(Some("my-bucket"), &mut span);
         assert_eq!(
             span.get(semco::AWS_S3_BUCKET),
             Some(&Value::String("my-bucket".into()))
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn set_bucket_none() {
         let mut span = TestSpan::new();
-        set_bucket(&mut span, None);
+        set_bucket(None, &mut span);
         assert!(span.get(semco::AWS_S3_BUCKET).is_none());
     }
 
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn set_key_with_value() {
         let mut span = TestSpan::new();
-        set_key(&mut span, Some("path/to/object.txt"));
+        set_key(Some("path/to/object.txt"), &mut span);
         assert_eq!(
             span.get(semco::AWS_S3_KEY),
             Some(&Value::String("path/to/object.txt".into()))
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn set_key_none() {
         let mut span = TestSpan::new();
-        set_key(&mut span, None);
+        set_key(None, &mut span);
         assert!(span.get(semco::AWS_S3_KEY).is_none());
     }
 
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn set_copy_source_with_value() {
         let mut span = TestSpan::new();
-        set_copy_source(&mut span, Some("source-bucket/source-key"));
+        set_copy_source(Some("source-bucket/source-key"), &mut span);
         assert_eq!(
             span.get(semco::AWS_S3_COPY_SOURCE),
             Some(&Value::String("source-bucket/source-key".into()))
@@ -386,7 +386,7 @@ mod tests {
     #[test]
     fn set_copy_source_none() {
         let mut span = TestSpan::new();
-        set_copy_source(&mut span, None);
+        set_copy_source(None, &mut span);
         assert!(span.get(semco::AWS_S3_COPY_SOURCE).is_none());
     }
 
@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn set_upload_id_with_value() {
         let mut span = TestSpan::new();
-        set_upload_id(&mut span, Some("upload-123"));
+        set_upload_id(Some("upload-123"), &mut span);
         assert_eq!(
             span.get(semco::AWS_S3_UPLOAD_ID),
             Some(&Value::String("upload-123".into()))
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn set_upload_id_none() {
         let mut span = TestSpan::new();
-        set_upload_id(&mut span, None);
+        set_upload_id(None, &mut span);
         assert!(span.get(semco::AWS_S3_UPLOAD_ID).is_none());
     }
 
@@ -414,14 +414,14 @@ mod tests {
     #[test]
     fn set_part_number_with_value() {
         let mut span = TestSpan::new();
-        set_part_number(&mut span, Some(42_i32));
+        set_part_number(Some(42_i32), &mut span);
         assert_eq!(span.get(semco::AWS_S3_PART_NUMBER), Some(&Value::I64(42)));
     }
 
     #[test]
     fn set_part_number_none() {
         let mut span = TestSpan::new();
-        set_part_number(&mut span, None);
+        set_part_number(None, &mut span);
         assert!(span.get(semco::AWS_S3_PART_NUMBER).is_none());
     }
 

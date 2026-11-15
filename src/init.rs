@@ -447,3 +447,54 @@ macro_rules! aws_sdk_client_provider {
         $crate::aws_sdk_client_provider!($name() -> $client, interceptor = $crate::interceptor::DefaultInterceptor::new());
     };
 }
+
+#[cfg(all(test, feature = "tracing-backend"))]
+mod tests {
+    use super::*;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::InMemorySpanExporter;
+    use tracing::{debug_span, info_span, trace_span};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    #[test]
+    fn default_tracing_otel_layer_exports() {
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let tracer = provider.tracer("test");
+
+        let subscriber = tracing_subscriber::registry().with(default_tracing_otel_layer(tracer));
+
+        tracing::subscriber::with_default(subscriber, || {
+            // Should be included
+            let _info = info_span!(target: "my_app", "info_span").entered();
+            drop(_info);
+            let _sdk =
+                debug_span!(target: "aws_sdk_dynamodb::operation::get_item", "sdk_span").entered();
+            drop(_sdk);
+            let _runtime =
+                debug_span!(target: "my_crate::tracing_runtime_layer", "runtime_span").entered();
+            drop(_runtime);
+            // Should be filtered out
+            let _debug = debug_span!(target: "my_app", "debug_span").entered();
+            drop(_debug);
+            let _sdk_non_op =
+                debug_span!(target: "aws_sdk_dynamodb::config", "sdk_non_op").entered();
+            drop(_sdk_non_op);
+            let _trace = trace_span!(target: "other", "trace_span").entered();
+            drop(_trace);
+        });
+        provider.force_flush().unwrap();
+
+        let names = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .map(|span| span.name.to_string())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"info_span".to_string()));
+        assert!(names.contains(&"sdk_span".to_string()));
+        assert!(names.contains(&"runtime_span".to_string()));
+    }
+}

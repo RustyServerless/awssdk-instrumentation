@@ -136,9 +136,10 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
         input: &context::Input,
         span: &mut SW,
     ) {
+        let mut operation_matched = true;
         span.set_attribute(semco::DB_SYSTEM_NAME, "aws.dynamodb");
+        // Operations with per-operation helpers (semconv defines extra attributes)
         match operation {
-            // Operations with per-operation helpers (semconv defines extra attributes)
             "GetItem" => extract_get_item_input(input, span),
             "Query" => extract_query_input(input, span),
             "Scan" => extract_scan_input(input, span),
@@ -149,149 +150,96 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
             "BatchWriteItem" => extract_batch_write_item_input(input, span),
             "TransactGetItems" => extract_transact_get_items_input(input, span),
             "TransactWriteItems" => extract_transact_write_items_input(input, span),
-            // Operations that only have table_name
-            "PutItem" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<PutItemInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateItem" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateItemInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DeleteItem" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DeleteItemInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DeleteTable" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DeleteTableInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeTable" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeTableInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeTimeToLive" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeTimeToLiveInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateTimeToLive" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateTimeToLiveInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeContinuousBackups" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeContinuousBackupsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateContinuousBackups" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateContinuousBackupsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeContributorInsights" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeContributorInsightsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateContributorInsights" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateContributorInsightsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "ListContributorInsights" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<ListContributorInsightsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeKinesisStreamingDestination" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeKinesisStreamingDestinationInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "EnableKinesisStreamingDestination" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<EnableKinesisStreamingDestinationInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DisableKinesisStreamingDestination" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DisableKinesisStreamingDestinationInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateKinesisStreamingDestination" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateKinesisStreamingDestinationInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "CreateBackup" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<CreateBackupInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "ListBackups" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<ListBackupsInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "DescribeTableReplicaAutoScaling" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<DescribeTableReplicaAutoScalingInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            "UpdateTableReplicaAutoScaling" => set_table_names(
-                span,
-                input
-                    .downcast_ref::<UpdateTableReplicaAutoScalingInput>()
-                    .expect("correct type")
-                    .table_name(),
-            ),
-            _ => {}
+            _ => operation_matched = false,
         };
+        if operation_matched {
+            return;
+        }
+        // Operations that only have table_name
+        let table_names = match operation {
+            "PutItem" => input
+                .downcast_ref::<PutItemInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateItem" => input
+                .downcast_ref::<UpdateItemInput>()
+                .expect("correct type")
+                .table_name(),
+            "DeleteItem" => input
+                .downcast_ref::<DeleteItemInput>()
+                .expect("correct type")
+                .table_name(),
+            "DeleteTable" => input
+                .downcast_ref::<DeleteTableInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeTable" => input
+                .downcast_ref::<DescribeTableInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeTimeToLive" => input
+                .downcast_ref::<DescribeTimeToLiveInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateTimeToLive" => input
+                .downcast_ref::<UpdateTimeToLiveInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeContinuousBackups" => input
+                .downcast_ref::<DescribeContinuousBackupsInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateContinuousBackups" => input
+                .downcast_ref::<UpdateContinuousBackupsInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeContributorInsights" => input
+                .downcast_ref::<DescribeContributorInsightsInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateContributorInsights" => input
+                .downcast_ref::<UpdateContributorInsightsInput>()
+                .expect("correct type")
+                .table_name(),
+            "ListContributorInsights" => input
+                .downcast_ref::<ListContributorInsightsInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeKinesisStreamingDestination" => input
+                .downcast_ref::<DescribeKinesisStreamingDestinationInput>()
+                .expect("correct type")
+                .table_name(),
+            "EnableKinesisStreamingDestination" => input
+                .downcast_ref::<EnableKinesisStreamingDestinationInput>()
+                .expect("correct type")
+                .table_name(),
+            "DisableKinesisStreamingDestination" => input
+                .downcast_ref::<DisableKinesisStreamingDestinationInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateKinesisStreamingDestination" => input
+                .downcast_ref::<UpdateKinesisStreamingDestinationInput>()
+                .expect("correct type")
+                .table_name(),
+            "CreateBackup" => input
+                .downcast_ref::<CreateBackupInput>()
+                .expect("correct type")
+                .table_name(),
+            "ListBackups" => input
+                .downcast_ref::<ListBackupsInput>()
+                .expect("correct type")
+                .table_name(),
+            "DescribeTableReplicaAutoScaling" => input
+                .downcast_ref::<DescribeTableReplicaAutoScalingInput>()
+                .expect("correct type")
+                .table_name(),
+            "UpdateTableReplicaAutoScaling" => input
+                .downcast_ref::<UpdateTableReplicaAutoScalingInput>()
+                .expect("correct type")
+                .table_name(),
+            _ => None,
+        };
+        set_table_names(table_names, span);
     }
 
     fn extract_output(
@@ -301,68 +249,63 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
         output: &context::Output,
         span: &mut SW,
     ) {
+        let mut operation_matched = true;
         match operation {
             "Query" => extract_query_output(output, span),
             "Scan" => extract_scan_output(output, span),
             "ListTables" => extract_list_tables_output(output, span),
-            "GetItem" => set_consumed_capacity_opt(
-                span,
-                output
-                    .downcast_ref::<GetItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "PutItem" => set_consumed_capacity_opt(
-                span,
-                output
-                    .downcast_ref::<PutItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "DeleteItem" => set_consumed_capacity_opt(
-                span,
-                output
-                    .downcast_ref::<DeleteItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "UpdateItem" => set_consumed_capacity_opt(
-                span,
-                output
-                    .downcast_ref::<UpdateItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "BatchGetItem" => set_consumed_capacity_list(
-                span,
-                output
-                    .downcast_ref::<BatchGetItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "BatchWriteItem" => set_consumed_capacity_list(
-                span,
-                output
-                    .downcast_ref::<BatchWriteItemOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "TransactGetItems" => set_consumed_capacity_list(
-                span,
-                output
-                    .downcast_ref::<TransactGetItemsOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            "TransactWriteItems" => set_consumed_capacity_list(
-                span,
-                output
-                    .downcast_ref::<TransactWriteItemsOutput>()
-                    .expect("correct type")
-                    .consumed_capacity(),
-            ),
-            _ => {}
+            _ => operation_matched = false,
         };
+        if operation_matched {
+            return;
+        }
+        operation_matched = true;
+        let consumed_capacity = match operation {
+            "GetItem" => output
+                .downcast_ref::<GetItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "PutItem" => output
+                .downcast_ref::<PutItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "DeleteItem" => output
+                .downcast_ref::<DeleteItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "UpdateItem" => output
+                .downcast_ref::<UpdateItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            _ => {
+                operation_matched = false;
+                None
+            }
+        };
+        set_consumed_capacity_opt(consumed_capacity, span);
+        if operation_matched {
+            return;
+        }
+        let ccs = match operation {
+            "BatchGetItem" => output
+                .downcast_ref::<BatchGetItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "BatchWriteItem" => output
+                .downcast_ref::<BatchWriteItemOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "TransactGetItems" => output
+                .downcast_ref::<TransactGetItemsOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            "TransactWriteItems" => output
+                .downcast_ref::<TransactWriteItemsOutput>()
+                .expect("correct type")
+                .consumed_capacity(),
+            _ => &[],
+        };
+        set_consumed_capacity_list(ccs, span);
     }
 }
 
@@ -373,7 +316,7 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for DynamoDBExtractor {
 /// Extracts input attributes for the `GetItem` operation.
 fn extract_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<GetItemInput>().expect("correct type");
-    set_table_names(span, i.table_name());
+    set_table_names(i.table_name(), span);
     set_consistent_read(span, i.consistent_read());
     set_projection(span, i.projection_expression());
 }
@@ -381,7 +324,7 @@ fn extract_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
 /// Extracts input attributes for the `Query` operation.
 fn extract_query_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<QueryInput>().expect("correct type");
-    set_table_names(span, i.table_name());
+    set_table_names(i.table_name(), span);
     set_consistent_read(span, i.consistent_read());
     set_projection(span, i.projection_expression());
     set_index_name(span, i.index_name());
@@ -396,7 +339,7 @@ fn extract_query_input(input: &context::Input, span: &mut impl SpanWrite) {
 /// Extracts input attributes for the `Scan` operation.
 fn extract_scan_input(input: &context::Input, span: &mut impl SpanWrite) {
     let i = input.downcast_ref::<ScanInput>().expect("correct type");
-    set_table_names(span, i.table_name());
+    set_table_names(i.table_name(), span);
     set_consistent_read(span, i.consistent_read());
     set_projection(span, i.projection_expression());
     set_index_name(span, i.index_name());
@@ -419,7 +362,7 @@ fn extract_create_table_input(input: &context::Input, span: &mut impl SpanWrite)
     let i = input
         .downcast_ref::<CreateTableInput>()
         .expect("correct type");
-    set_table_names(span, i.table_name());
+    set_table_names(i.table_name(), span);
     set_provisioned_throughput(span, i.provisioned_throughput());
 }
 
@@ -428,7 +371,7 @@ fn extract_update_table_input(input: &context::Input, span: &mut impl SpanWrite)
     let i = input
         .downcast_ref::<UpdateTableInput>()
         .expect("correct type");
-    set_table_names(span, i.table_name());
+    set_table_names(i.table_name(), span);
     set_provisioned_throughput(span, i.provisioned_throughput());
 }
 
@@ -449,7 +392,6 @@ fn extract_list_tables_input(input: &context::Input, span: &mut impl SpanWrite) 
 /// Extracts input attributes for the `BatchGetItem` operation.
 fn extract_batch_get_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
-        span,
         input
             .downcast_ref::<BatchGetItemInput>()
             .expect("correct type")
@@ -457,13 +399,13 @@ fn extract_batch_get_item_input(input: &context::Input, span: &mut impl SpanWrit
             .into_iter()
             .flat_map(|map| map.keys())
             .map(|s| s.as_str()),
+        span,
     );
 }
 
 /// Extracts input attributes for the `BatchWriteItem` operation.
 fn extract_batch_write_item_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
-        span,
         input
             .downcast_ref::<BatchWriteItemInput>()
             .expect("correct type")
@@ -471,13 +413,13 @@ fn extract_batch_write_item_input(input: &context::Input, span: &mut impl SpanWr
             .into_iter()
             .flat_map(|map| map.keys())
             .map(|s| s.as_str()),
+        span,
     );
 }
 
 /// Extracts input attributes for the `TransactGetItems` operation.
 fn extract_transact_get_items_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
-        span,
         input
             .downcast_ref::<TransactGetItemsInput>()
             .expect("correct type")
@@ -486,13 +428,13 @@ fn extract_transact_get_items_input(input: &context::Input, span: &mut impl Span
             .filter_map(|item| item.get())
             .map(|get| get.table_name())
             .collect::<BTreeSet<_>>(),
+        span,
     );
 }
 
 /// Extracts input attributes for the `TransactWriteItems` operation.
 fn extract_transact_write_items_input(input: &context::Input, span: &mut impl SpanWrite) {
     set_table_names(
-        span,
         input
             .downcast_ref::<TransactWriteItemsInput>()
             .expect("correct type")
@@ -506,6 +448,7 @@ fn extract_transact_write_items_input(input: &context::Input, span: &mut impl Sp
                     .or_else(|| item.update().map(|u| u.table_name()))
             })
             .collect::<BTreeSet<_>>(),
+        span,
     );
 }
 
@@ -521,7 +464,7 @@ fn extract_query_output(output: &context::Output, span: &mut impl SpanWrite) {
         semco::AWS_DYNAMODB_SCANNED_COUNT,
         Value::I64(i64::from(o.scanned_count())),
     );
-    set_consumed_capacity_opt(span, o.consumed_capacity());
+    set_consumed_capacity_opt(o.consumed_capacity(), span);
 }
 
 /// Extracts output attributes for the `Scan` operation.
@@ -532,7 +475,7 @@ fn extract_scan_output(output: &context::Output, span: &mut impl SpanWrite) {
         semco::AWS_DYNAMODB_SCANNED_COUNT,
         Value::I64(i64::from(o.scanned_count())),
     );
-    set_consumed_capacity_opt(span, o.consumed_capacity());
+    set_consumed_capacity_opt(o.consumed_capacity(), span);
 }
 
 /// Extracts output attributes for the `ListTables` operation.
@@ -551,7 +494,7 @@ fn extract_list_tables_output(output: &context::Output, span: &mut impl SpanWrit
 // ---------------------------------------------------------------------------
 
 /// Sets the `aws.dynamodb.table_names` attribute from an iterator of table name strings.
-fn set_table_names<'a>(span: &mut impl SpanWrite, table_names: impl IntoIterator<Item = &'a str>) {
+fn set_table_names<'a>(table_names: impl IntoIterator<Item = &'a str>, span: &mut impl SpanWrite) {
     let table_names = table_names
         .into_iter()
         .map(|table_name| StringValue::from(table_name.to_owned()))
@@ -641,7 +584,7 @@ fn set_provisioned_throughput(
 
 /// Sets the `aws.dynamodb.consumed_capacity` attribute from a single optional `ConsumedCapacity`
 /// value (used by `GetItem`, `PutItem`, `DeleteItem`, `UpdateItem`, `Query`, `Scan`).
-fn set_consumed_capacity_opt(span: &mut impl SpanWrite, cc: Option<&types::ConsumedCapacity>) {
+fn set_consumed_capacity_opt(cc: Option<&types::ConsumedCapacity>, span: &mut impl SpanWrite) {
     if let Some(cc) = cc {
         if let Ok(json) = serde_json::to_string(&SerConsumedCapacity(cc)) {
             span.set_attribute(
@@ -654,7 +597,7 @@ fn set_consumed_capacity_opt(span: &mut impl SpanWrite, cc: Option<&types::Consu
 
 /// Sets the `aws.dynamodb.consumed_capacity` attribute from a list of `ConsumedCapacity` values
 /// (used by `BatchGetItem`, `BatchWriteItem`, `TransactGetItems`, `TransactWriteItems`).
-fn set_consumed_capacity_list(span: &mut impl SpanWrite, ccs: &[types::ConsumedCapacity]) {
+fn set_consumed_capacity_list(ccs: &[types::ConsumedCapacity], span: &mut impl SpanWrite) {
     if !ccs.is_empty() {
         let items: Vec<StringValue> = ccs
             .iter()
@@ -889,14 +832,14 @@ mod tests {
         let mut span = TestSpan::new();
 
         // Single table
-        set_table_names(&mut span, ["orders"]);
+        set_table_names(["orders"], &mut span);
         let val = span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
         assert!(val.is_some());
         assert!(matches!(val.unwrap(), Value::Array(_)));
 
         // Multiple tables
         let mut span2 = TestSpan::new();
-        set_table_names(&mut span2, ["table-a", "table-b"]);
+        set_table_names(["table-a", "table-b"], &mut span2);
         let val2 =
             span2.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES);
         assert!(val2.is_some());
@@ -910,7 +853,7 @@ mod tests {
     #[test]
     fn set_table_names_empty() {
         let mut span = TestSpan::new();
-        set_table_names(&mut span, std::iter::empty::<&str>());
+        set_table_names(std::iter::empty::<&str>(), &mut span);
         assert!(
             span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_TABLE_NAMES)
                 .is_none()
@@ -928,7 +871,7 @@ mod tests {
             .capacity_units(2.0)
             .build();
         let mut span = TestSpan::new();
-        set_consumed_capacity_opt(&mut span, Some(&cc));
+        set_consumed_capacity_opt(Some(&cc), &mut span);
 
         let val =
             span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY);
@@ -945,7 +888,7 @@ mod tests {
     #[test]
     fn set_consumed_capacity_opt_none() {
         let mut span = TestSpan::new();
-        set_consumed_capacity_opt(&mut span, None);
+        set_consumed_capacity_opt(None, &mut span);
         assert!(
             span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
                 .is_none()
@@ -969,7 +912,7 @@ mod tests {
                 .build(),
         ];
         let mut span = TestSpan::new();
-        set_consumed_capacity_list(&mut span, &ccs);
+        set_consumed_capacity_list(&ccs, &mut span);
 
         let val =
             span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY);
@@ -984,7 +927,7 @@ mod tests {
     #[test]
     fn set_consumed_capacity_list_empty() {
         let mut span = TestSpan::new();
-        set_consumed_capacity_list(&mut span, &[]);
+        set_consumed_capacity_list(&[], &mut span);
         assert!(
             span.get(opentelemetry_semantic_conventions::attribute::AWS_DYNAMODB_CONSUMED_CAPACITY)
                 .is_none()
@@ -1614,5 +1557,100 @@ mod tests {
 
         // No attributes set for unknown operation
         assert!(span.attributes.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_transact_get_items_input — consolidated_2tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_transact_get_items_input_dedup_and_sort() {
+        use aws_sdk_dynamodb::operation::transact_get_items::TransactGetItemsInput;
+        use aws_sdk_dynamodb::types::{AttributeValue, Get, TransactGetItem};
+
+        fn get_for(table_name: &str) -> Get {
+            Get::builder()
+                .table_name(table_name)
+                .key("pk", AttributeValue::S("v".to_string()))
+                .build()
+                .unwrap()
+        }
+
+        let sdk_input = TransactGetItemsInput::builder()
+            .transact_items(TransactGetItem::builder().get(get_for("zeta")).build())
+            .transact_items(TransactGetItem::builder().get(get_for("alpha")).build())
+            .transact_items(TransactGetItem::builder().get(get_for("zeta")).build())
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_transact_get_items_input(&input, &mut span);
+
+        let val = span.get(semco::AWS_DYNAMODB_TABLE_NAMES);
+        assert_eq!(
+            val,
+            Some(&Value::Array(Array::String(vec![
+                StringValue::from("alpha".to_string()),
+                StringValue::from("zeta".to_string()),
+            ])))
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // extract_create_table_input / set_provisioned_throughput — single_comprehensive
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn extract_create_table_input_with_and_without_throughput() {
+        use aws_sdk_dynamodb::operation::create_table::CreateTableInput;
+        use aws_sdk_dynamodb::types::ProvisionedThroughput;
+
+        // With provisioned throughput
+        let throughput = ProvisionedThroughput::builder()
+            .read_capacity_units(5)
+            .write_capacity_units(10)
+            .build()
+            .unwrap();
+        let sdk_input = CreateTableInput::builder()
+            .table_name("orders")
+            .provisioned_throughput(throughput)
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extract_create_table_input(&input, &mut span);
+
+        assert!(span.get(semco::AWS_DYNAMODB_TABLE_NAMES).is_some());
+        assert_eq!(
+            span.get(semco::AWS_DYNAMODB_PROVISIONED_READ_CAPACITY),
+            Some(&Value::F64(5.0))
+        );
+        assert_eq!(
+            span.get(semco::AWS_DYNAMODB_PROVISIONED_WRITE_CAPACITY),
+            Some(&Value::F64(10.0))
+        );
+
+        // Without provisioned throughput
+        let sdk_input_minimal = CreateTableInput::builder()
+            .table_name("orders")
+            .build()
+            .unwrap();
+        let input_minimal = context::Input::erase(sdk_input_minimal);
+        let mut span_minimal = TestSpan::new();
+
+        extract_create_table_input(&input_minimal, &mut span_minimal);
+
+        assert!(
+            span_minimal
+                .get(semco::AWS_DYNAMODB_PROVISIONED_READ_CAPACITY)
+                .is_none()
+        );
+        assert!(
+            span_minimal
+                .get(semco::AWS_DYNAMODB_PROVISIONED_WRITE_CAPACITY)
+                .is_none()
+        );
     }
 }

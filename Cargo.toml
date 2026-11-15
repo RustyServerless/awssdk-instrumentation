@@ -12,13 +12,13 @@ readme = "README.md"
 keywords = ["aws", "otel", "xray", "lambda", "serverless"]
 categories = ["development-tools::debugging"]
 exclude = [
-    ".envrc",
-    ".hooks/",
-    "scripts/",
-    ".github/",
-    "nix/",
-    "AGENTS.md",
-    "CONTRIBUTING.md",
+  ".envrc",
+  ".hooks/",
+  "scripts/",
+  ".github/",
+  "nix/",
+  "AGENTS.md",
+  "CONTRIBUTING.md",
 ]
 
 [dependencies]
@@ -33,8 +33,11 @@ opentelemetry = "0.33"
 opentelemetry_sdk = "0.33"
 opentelemetry-semantic-conventions = { version = "0.33" }
 # tracing is *always* required because it is the only way to extract the Service.Operation for interceptor
-tracing = { version = "0.1"}
-tracing-subscriber = { version = "0.3", default-features = false, features = ["smallvec", "registry"] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "smallvec",
+  "registry",
+] }
 
 # Backend: tracing
 tracing-opentelemetry = { version = "0.34", default-features = false, optional = true }
@@ -52,7 +55,7 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-sdk-sqs = { version = "1", optional = true }
 
 # Export: X-Ray
-opentelemetry-aws = {  version = "0.21", optional = true }
+opentelemetry-aws = { version = "0.21", optional = true }
 
 [features]
 default = ["tracing-backend", "env-lambda", "extract-dynamodb", "export-xray"]
@@ -64,12 +67,18 @@ tracing-backend = [
   "tracing-subscriber/fmt",
   "tracing-subscriber/ansi",
   "tracing-subscriber/json",
-  "tracing-subscriber/env-filter"
+  "tracing-subscriber/env-filter",
 ]
 otel-backend = []
 
 # --- Environment features ---
-env-lambda = ["dep:lambda_runtime", "dep:pin-project", "dep:tokio", "dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-lambda"]
+env-lambda = [
+  "dep:lambda_runtime",
+  "dep:pin-project",
+  "dep:tokio",
+  "dep:opentelemetry-aws",
+  "opentelemetry-aws/detector-aws-lambda",
+]
 env-ecs = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-ecs"]
 env-eks = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-eks"]
 env-ec2 = ["dep:opentelemetry-aws", "opentelemetry-aws/detector-aws-ec2"]
@@ -80,5 +89,15 @@ extract-s3 = ["dep:aws-sdk-s3"]
 extract-sqs = ["dep:aws-sdk-sqs"]
 
 # --- Export features ---
-export-xray = ["dep:opentelemetry-aws", "opentelemetry-aws/xray-exporter", "opentelemetry-aws/xray-daemon-client"]
+export-xray = [
+  "dep:opentelemetry-aws",
+  "opentelemetry-aws/xray-exporter",
+  "opentelemetry-aws/xray-daemon-client",
+]
 xray-no-lambda-node-nesting = []
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+opentelemetry_sdk = { version = "0.33", features = ["testing"] }
+aws-smithy-http-client = { version = "1", features = ["test-util"] }
+http = "1"
