@@ -347,7 +347,13 @@ macro_rules! make_lambda_runtime {
             telemetry_init = $telemetry_init,
             trigger = $trigger,
             lambda_layer_instrumentor = $lambda_layer_instrumentor ;
-            sdk_config_init().await; $($extra_init_code)*
+            // Initialize SdkConfig
+            sdk_config_init().await;
+            // Initialize all SDK client
+            $(
+                let _ = $name();
+            )+
+            $($extra_init_code)*
         );
     };
     (
