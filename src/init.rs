@@ -435,12 +435,12 @@ macro_rules! aws_sdk_client_provider {
         fn $name() -> $client {
             static CLIENT: ::std::sync::OnceLock<$client> = ::std::sync::OnceLock::new();
             CLIENT
-                .get_or_init(|| <$client>::new($crate::aws_sdk_config()))
+                .get_or_init(|| <$client>::new(aws_sdk_config()))
                 .clone()
         }
         const _: fn() = || {
             // Compile-time assertion that function is declared at the root
-            $crate::$name();
+            crate::$name();
         };
     };
     ($name:ident() -> $client:ty) => {
