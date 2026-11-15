@@ -111,7 +111,10 @@
 //!   exporter when the invocation future drops.
 //! - [`make_lambda_runtime!`] — a macro that generates a complete `main()`
 //!   function: telemetry init, SDK config/client singletons, Tower layer setup,
-//!   and `lambda_runtime::Runtime::run()`.
+//!   and `lambda_runtime::Runtime::run()`. SDK clients and the AWS-LC PRNG are
+//!   initialised during the Lambda Init phase; see [Cold Start Performance].
+//!
+//! [Cold Start Performance]: https://github.com/RustyServerless/awssdk-instrumentation#cold-start-performance
 //!
 //! ## Telemetry initialisation
 //!
