@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.1...HEAD
+
+## [0.4.1] - 2026-11-15
+
+### Changed
+
+- `make_lambda_runtime!` now seeds the AWS-LC PRNG in `main()` when at least one SDK client is declared. Since `aws-lc-rs` 1.14.1, this seeding collects CPU jitter entropy; done in the unthrottled Lambda Init phase rather than during the first invocation, it saves ~600 ms on a ~750–800 ms first invocation with a 128MB Lambda function. See [smithy-rs discussion #4541](https://github.com/smithy-lang/smithy-rs/discussions/4541).
+- New dependency on `aws-lc-rs`, enabled by the `env-lambda` feature. It resolves to the same `aws-lc-rs` instance used by `rustls` in the AWS SDK.
+
+### Performance notes
+
+- The 0.4.0 change creating SDK clients during the Init phase saves ~50 ms on a ~750–800 ms first invocation, less than previously announced.
+- Building your function with `AWS_LC_SYS_NO_JITTER_ENTROPY=1` (build-time variable) removes the CPU jitter entropy collection entirely, bringing cold starts back to the pre-`aws-lc-rs` level. It drops an additional entropy source, so this crate leaves the choice to you depending on your security and FIPS requirements. See [smithy-rs discussion #4541](https://github.com/smithy-lang/smithy-rs/discussions/4541) and the README "Cold Start Performance" section.
+
+[0.4.1]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.0...v0.4.1
 
 ## [0.4.0] - 2026-11-15
 

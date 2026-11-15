@@ -562,9 +562,10 @@ dependencies = [
 
 [[package]]
 name = "awssdk-instrumentation"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aws-config",
+ "aws-lc-rs",
  "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "aws-sdk-sqs",

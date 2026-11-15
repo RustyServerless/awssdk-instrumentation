@@ -23,6 +23,16 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
     }
 }
 
+/// Forces the AWS-LC PRNG to seed itself during the Lambda Init phase.
+///
+/// Called by the [`make_lambda_runtime!`]-generated `main()`. See the README
+/// [Cold Start Performance](https://github.com/RustyServerless/awssdk-instrumentation#cold-start-performance)
+/// section.
+#[doc(hidden)]
+pub fn init_aws_lc_prng() {
+    let _ = aws_lc_rs::rand::fill(&mut [0u8; 8]);
+}
+
 /// Generates a complete `#[tokio::main] async fn main()` for a Lambda function.
 ///
 /// This macro wires together:
@@ -65,7 +75,8 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 ///   with an interceptor type implementing [`Intercept`] pre-attached that will generate
 ///   appropriate spans. Every declared client is created in `main()` before
 ///   `extra_init_code` runs, so its construction cost is paid during the Lambda
-///   Init phase rather than the first invocation.
+///   Init phase rather than the first invocation. Declaring at least one client
+///   also seeds the AWS-LC PRNG in `main()`; see [Cold Start Performance].
 ///
 /// # Prerequisites
 ///
@@ -124,6 +135,7 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 /// [`TracingInstrumentor`]: crate::lambda::layer::TracingInstrumentor
 /// [`OtelInstrumentor`]: crate::lambda::layer::OtelInstrumentor
 /// [`aws_sdk_config_provider!`]: crate::aws_sdk_config_provider
+/// [Cold Start Performance]: https://github.com/RustyServerless/awssdk-instrumentation#cold-start-performance
 #[macro_export]
 macro_rules! make_lambda_runtime {
     // extra_init_code
@@ -355,6 +367,8 @@ macro_rules! make_lambda_runtime {
             $(
                 let _ = $name();
             )+
+            // Provoke seeding of AWS LC PRNG
+            $crate::lambda::macros::init_aws_lc_prng();
             $($extra_init_code)*
         );
     };
