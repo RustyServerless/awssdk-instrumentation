@@ -56,7 +56,6 @@ awssdk_instrumentation::make_lambda_runtime!(
         let trigger = (1, 2);
         let telemetry_init = [trigger.0, trigger.1];
         let _ = telemetry_init;
-        let _ = dyndb();
         // Prevents a warning for unreachable code
         if true {
             return Ok(());

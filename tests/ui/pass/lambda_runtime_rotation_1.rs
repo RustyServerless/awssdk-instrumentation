@@ -16,7 +16,6 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 awssdk_instrumentation::make_lambda_runtime!(
     handler,
     extra_init_code = {
-        let _ = dyndb();
         // Prevents a warning for unreachable code
         if true {
             return Ok(());

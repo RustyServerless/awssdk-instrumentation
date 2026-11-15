@@ -28,8 +28,6 @@ awssdk_instrumentation::make_lambda_runtime!(
     trigger = OTelFaasTrigger::Datasource,
     telemetry_init = my_telemetry_init,
     extra_init_code = {
-        let _ = dyndb();
-        let _ = dyndb2();
         // Prevents a warning for unreachable code
         if true {
             return Ok(());

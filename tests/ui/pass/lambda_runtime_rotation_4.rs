@@ -25,8 +25,6 @@ awssdk_instrumentation::make_lambda_runtime!(
     lambda_layer_instrumentor = DefaultInstrumentor,
     dyndb() -> aws_sdk_dynamodb::Client,
     extra_init_code = {
-        let _ = dyndb();
-        let _ = dyndb2();
         // Prevents a warning for unreachable code
         if true {
             return Ok(());
