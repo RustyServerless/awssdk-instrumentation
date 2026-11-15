@@ -316,7 +316,7 @@ macro_rules! make_lambda_runtime {
         telemetry_init = $telemetry_init:path,
         trigger = $trigger:expr,
         sdk_client_interceptor = $sdk_client_interceptor:expr,
-        lambda_layer_instrumentor = $lambda_layer_instrumentor:ty,
+        lambda_layer_instrumentor = $lambda_layer_instrumentor:ty$(,)+
     ) => {
         $crate::make_lambda_runtime!(
             internal
@@ -335,7 +335,7 @@ macro_rules! make_lambda_runtime {
         trigger = $trigger:expr,
         sdk_client_interceptor = $sdk_client_interceptor:expr,
         lambda_layer_instrumentor = $lambda_layer_instrumentor:ty,
-        $($name:ident() -> $client:ty,)+
+        $($name:ident() -> $client:ty,)+$(,)?
     ) => {
         $crate::aws_sdk_config_provider!();
         $(
@@ -379,7 +379,7 @@ macro_rules! make_lambda_runtime {
         }
     };
     // Entry point
-    ($handler:path $(,$($rest:tt)+)?) => {
+    ($handler:path $(,$($rest:tt)*)?) => {
         $crate::make_lambda_runtime!(
             [$handler, ]
             @find_extra_init_code
@@ -387,7 +387,7 @@ macro_rules! make_lambda_runtime {
             @find_trigger
             @find_sdk_client_interceptor
             @find_lambda_layer_instrumentor
-            [$($($rest)+,)?]
+            [$($($rest)*,)?]
         );
     };
 }

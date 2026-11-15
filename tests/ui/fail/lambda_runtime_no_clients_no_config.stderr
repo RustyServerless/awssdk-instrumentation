@@ -1,0 +1,5 @@
+error[E0425]: cannot find function `aws_sdk_config` in this scope
+  --> tests/ui/fail/lambda_runtime_no_clients_no_config.rs:14:13
+   |
+14 |     let _ = aws_sdk_config();
+   |             ^^^^^^^^^^^^^^ not found in this scope

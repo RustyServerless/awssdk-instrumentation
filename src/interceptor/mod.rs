@@ -862,7 +862,10 @@ impl<SW: SpanWrite> DefaultExtractor<SW> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        AttributeExtractor, AwsSdkOperation, ConfigBag, DefaultExtractor, Operation, Region,
+        Service, ServiceFilter, SpanWrite, Status, context, extract_service_operation, semco,
+    };
     // Tests for ServiceFilter::is_match — 2 consolidated tests
     #[test]
     fn service_filter_is_match_matches() {
@@ -893,5 +896,485 @@ mod tests {
         assert!(!ServiceFilter::Operation("DynamoDB", "GetItem").is_match("DynamoDB", "PutItem"));
         // Operation does not match when both service and operation differ
         assert!(!ServiceFilter::Operation("DynamoDB", "GetItem").is_match("S3", "PutObject"));
+    }
+
+    // ── Shared helpers for DefaultExtractor pipeline tests ───────────────────
+
+    use std::sync::{Arc, Mutex};
+
+    use aws_smithy_runtime_api::client::orchestrator::OrchestratorError;
+    use aws_smithy_runtime_api::client::result::ConnectorError;
+    use aws_smithy_runtime_api::http;
+    use aws_smithy_types::body::SdkBody;
+    use opentelemetry::Value;
+
+    /// Type-erasable stand-in for an SDK operation input.
+    #[derive(Debug)]
+    struct FakeInput;
+
+    /// In-memory [`SpanWrite`] implementation that records attributes and status for assertions.
+    struct TestSpan {
+        attributes: Vec<(&'static str, Value)>,
+        status: Option<Status>,
+    }
+    impl TestSpan {
+        fn new() -> Self {
+            Self {
+                attributes: vec![],
+                status: None,
+            }
+        }
+        fn get(&self, key: &str) -> Option<&Value> {
+            self.attributes
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v)
+        }
+    }
+    impl SpanWrite for TestSpan {
+        fn set_attribute(&mut self, key: &'static str, value: impl Into<Value>) {
+            self.attributes.push((key, value.into()));
+        }
+        fn set_status(&mut self, code: Status) {
+            self.status = Some(code);
+        }
+    }
+
+    /// Error type whose `Display` mimics the generated SDK operation error format
+    /// (`"ErrorCode: message"` or just `"ErrorCode"`).
+    #[derive(Debug)]
+    struct TestOpError(&'static str);
+    impl core::fmt::Display for TestOpError {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+    impl std::error::Error for TestOpError {}
+
+    /// Builds a `ConfigBag` with an `AwsSdkOperation` already stored, as would be the case
+    /// after `read_before_execution` has run.
+    fn cfg_with_operation(service: &str, operation: &str) -> ConfigBag {
+        let mut cfg = ConfigBag::base();
+        cfg.interceptor_state()
+            .store_put(AwsSdkOperation::new(service, operation));
+        cfg
+    }
+
+    // Tests for DefaultExtractor::read_before_execution — comprehensive
+
+    #[test]
+    fn read_before_execution_dispatches_custom_extractors_and_hooks_in_order() {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let outer_span =
+                tracing::info_span!(target: "aws_sdk_fake::operation::do_thing", "Fake.DoThing");
+            let _enter_outer = outer_span.enter();
+            // A non-matching nested span forces `SpanPauser` to walk up to `outer_span`.
+            let child_span = tracing::info_span!("ChildSpan");
+            let _enter_child = child_span.enter();
+
+            let order: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+
+            struct RecordingExtractor {
+                order: Arc<Mutex<Vec<&'static str>>>,
+            }
+            impl AttributeExtractor<TestSpan> for RecordingExtractor {
+                fn extract_input(
+                    &self,
+                    _service: Service,
+                    _operation: Operation,
+                    _input: &context::Input,
+                    span: &mut TestSpan,
+                ) {
+                    self.order.lock().unwrap().push("custom");
+                    span.set_attribute("test.custom", true);
+                }
+            }
+
+            let mut extractor = DefaultExtractor::<TestSpan>::new();
+            extractor.register_attribute_extractor(RecordingExtractor {
+                order: Arc::clone(&order),
+            });
+            {
+                let order = Arc::clone(&order);
+                extractor.register_input_hook(ServiceFilter::All, move |_s, _o, _input, span| {
+                    order.lock().unwrap().push("hook_all");
+                    span.set_attribute("test.hook_all", true);
+                });
+            }
+            {
+                let order = Arc::clone(&order);
+                extractor.register_input_hook(
+                    ServiceFilter::Operation("fake", "dothing"),
+                    move |_s, _o, _input, span| {
+                        order.lock().unwrap().push("hook_op");
+                        span.set_attribute("test.hook_op", true);
+                    },
+                );
+            }
+            {
+                let order = Arc::clone(&order);
+                extractor.register_input_hook(
+                    ServiceFilter::Service("S3"),
+                    move |_s, _o, _input, _span| {
+                        order.lock().unwrap().push("hook_s3_should_not_fire");
+                    },
+                );
+            }
+
+            let ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+            let bctx = context::BeforeSerializationInterceptorContextRef::from(&ctx);
+
+            let mut cfg = ConfigBag::base();
+            cfg.interceptor_state().store_put(Region::new("eu-west-1"));
+
+            let mut span = TestSpan::new();
+            let result = extractor.read_before_execution(&bctx, &mut cfg, &mut span);
+            assert!(result.is_ok());
+
+            assert_eq!(
+                span.get(semco::CLOUD_REGION),
+                Some(&Value::String("eu-west-1".into()))
+            );
+            assert_eq!(span.get("test.custom"), Some(&Value::Bool(true)));
+            assert_eq!(span.get("test.hook_all"), Some(&Value::Bool(true)));
+            assert_eq!(span.get("test.hook_op"), Some(&Value::Bool(true)));
+
+            // Only the matching filters fired, in registration order, after the custom extractor.
+            assert_eq!(
+                *order.lock().unwrap(),
+                vec!["custom", "hook_all", "hook_op"]
+            );
+
+            let (service, operation) = extract_service_operation(&cfg);
+            assert_eq!(service, "Fake");
+            assert_eq!(operation, "DoThing");
+        });
+    }
+
+    #[test]
+    #[cfg(feature = "extract-dynamodb")]
+    fn read_before_execution_dispatches_builtin_dynamodb_extractor() {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let outer_span = tracing::info_span!(
+                target: "aws_sdk_dynamodb::operation::get_item",
+                "DynamoDB.GetItem"
+            );
+            let _enter = outer_span.enter();
+
+            let extractor = DefaultExtractor::<TestSpan>::new();
+
+            let sdk_input = aws_sdk_dynamodb::operation::get_item::GetItemInput::builder()
+                .table_name("orders")
+                .build()
+                .unwrap();
+            let ctx = context::InterceptorContext::new(context::Input::erase(sdk_input));
+            let bctx = context::BeforeSerializationInterceptorContextRef::from(&ctx);
+
+            let mut cfg = ConfigBag::base();
+            cfg.interceptor_state().store_put(Region::new("eu-west-1"));
+            let mut span = TestSpan::new();
+
+            let result = extractor.read_before_execution(&bctx, &mut cfg, &mut span);
+            assert!(result.is_ok());
+
+            assert_eq!(
+                span.get(semco::DB_SYSTEM_NAME),
+                Some(&Value::String("aws.dynamodb".into()))
+            );
+        });
+    }
+
+    #[test]
+    fn read_before_execution_errors() {
+        // No Region in the ConfigBag.
+        {
+            let extractor = DefaultExtractor::<TestSpan>::new();
+            let ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+            let bctx = context::BeforeSerializationInterceptorContextRef::from(&ctx);
+            let mut cfg = ConfigBag::base();
+            let mut span = TestSpan::new();
+            assert!(
+                extractor
+                    .read_before_execution(&bctx, &mut cfg, &mut span)
+                    .is_err()
+            );
+        }
+
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            // No ancestor tracing span matches the `aws_sdk_*::operation::*` target.
+            {
+                let non_matching = tracing::info_span!(target: "my_crate::internal", "NonMatching");
+                let _enter = non_matching.enter();
+
+                let extractor = DefaultExtractor::<TestSpan>::new();
+                let ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+                let bctx = context::BeforeSerializationInterceptorContextRef::from(&ctx);
+                let mut cfg = ConfigBag::base();
+                cfg.interceptor_state().store_put(Region::new("eu-west-1"));
+                let mut span = TestSpan::new();
+                assert!(
+                    extractor
+                        .read_before_execution(&bctx, &mut cfg, &mut span)
+                        .is_err()
+                );
+            }
+
+            // The matching span's name has no '.' separator.
+            {
+                let no_dot =
+                    tracing::info_span!(target: "aws_sdk_fake::operation::no_dot", "NoDot");
+                let _enter = no_dot.enter();
+
+                let extractor = DefaultExtractor::<TestSpan>::new();
+                let ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+                let bctx = context::BeforeSerializationInterceptorContextRef::from(&ctx);
+                let mut cfg = ConfigBag::base();
+                cfg.interceptor_state().store_put(Region::new("eu-west-1"));
+                let mut span = TestSpan::new();
+                assert!(
+                    extractor
+                        .read_before_execution(&bctx, &mut cfg, &mut span)
+                        .is_err()
+                );
+            }
+        });
+    }
+
+    // Tests for DefaultExtractor::read_before_deserialization — consolidated_2tests
+
+    #[test]
+    fn read_before_deserialization_with_request_ids() {
+        let mut extractor = DefaultExtractor::<TestSpan>::new();
+        let hook_fired = Arc::new(Mutex::new(false));
+        {
+            let hook_fired = Arc::clone(&hook_fired);
+            extractor.register_response_hook(
+                ServiceFilter::Operation("Fake", "Op"),
+                move |_s, _o, _response, _span| {
+                    *hook_fired.lock().unwrap() = true;
+                },
+            );
+        }
+
+        let mut cfg = cfg_with_operation("Fake", "Op");
+
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let mut response = http::Response::new(
+            http::StatusCode::try_from(200u16).unwrap(),
+            SdkBody::empty(),
+        );
+        response.headers_mut().insert("x-amzn-requestid", "req-123");
+        response.headers_mut().insert("x-amz-id-2", "ext-456");
+        ctx.set_response(response);
+        let bctx = context::BeforeDeserializationInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_before_deserialization(&bctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::HTTP_RESPONSE_STATUS_CODE),
+            Some(&Value::I64(200))
+        );
+        assert_eq!(
+            span.get(semco::AWS_REQUEST_ID),
+            Some(&Value::String("req-123".into()))
+        );
+        assert_eq!(
+            span.get(semco::AWS_EXTENDED_REQUEST_ID),
+            Some(&Value::String("ext-456".into()))
+        );
+        assert!(*hook_fired.lock().unwrap());
+    }
+
+    #[test]
+    fn read_before_deserialization_without_request_ids() {
+        let extractor = DefaultExtractor::<TestSpan>::new();
+        let mut cfg = cfg_with_operation("Fake", "Op");
+
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let response = http::Response::new(
+            http::StatusCode::try_from(404u16).unwrap(),
+            SdkBody::empty(),
+        );
+        ctx.set_response(response);
+        let bctx = context::BeforeDeserializationInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_before_deserialization(&bctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::HTTP_RESPONSE_STATUS_CODE),
+            Some(&Value::I64(404))
+        );
+        assert!(span.get(semco::AWS_REQUEST_ID).is_none());
+        assert!(span.get(semco::AWS_EXTENDED_REQUEST_ID).is_none());
+    }
+
+    // Tests for DefaultExtractor::read_after_execution — comprehensive
+
+    #[test]
+    fn read_after_execution_success_calls_output_hooks_without_error() {
+        let mut extractor = DefaultExtractor::<TestSpan>::new();
+        let hook_fired = Arc::new(Mutex::new(false));
+        {
+            let hook_fired = Arc::clone(&hook_fired);
+            extractor.register_output_hook(ServiceFilter::All, move |_s, _o, _output, _span| {
+                *hook_fired.lock().unwrap() = true;
+            });
+        }
+
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        ctx.set_output_or_error(Ok(context::Output::erase(42_i32)));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert!(*hook_fired.lock().unwrap());
+        assert!(span.get(semco::ERROR_TYPE).is_none());
+        assert!(span.status.is_none());
+    }
+
+    #[test]
+    fn read_after_execution_operation_error_with_message() {
+        let mut extractor = DefaultExtractor::<TestSpan>::new();
+        let hook_fired = Arc::new(Mutex::new(false));
+        {
+            let hook_fired = Arc::clone(&hook_fired);
+            extractor.register_error_hook(ServiceFilter::All, move |_s, _o, _err, _span| {
+                *hook_fired.lock().unwrap() = true;
+            });
+        }
+
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let error = context::Error::erase(TestOpError("SomeCode: some message"));
+        ctx.set_output_or_error(Err(OrchestratorError::operation(error)));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("SomeCode".into()))
+        );
+        assert_eq!(span.status, Some(Status::error("some message")));
+        assert!(*hook_fired.lock().unwrap());
+    }
+
+    #[test]
+    fn read_after_execution_operation_error_without_message() {
+        let extractor = DefaultExtractor::<TestSpan>::new();
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let error = context::Error::erase(TestOpError("SomeCode"));
+        ctx.set_output_or_error(Err(OrchestratorError::operation(error)));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("SomeCode".into()))
+        );
+        assert_eq!(span.status, Some(Status::error("SomeCode")));
+    }
+
+    #[test]
+    fn read_after_execution_connector_error_does_not_fire_error_hooks() {
+        let mut extractor = DefaultExtractor::<TestSpan>::new();
+        let hook_fired = Arc::new(Mutex::new(false));
+        {
+            let hook_fired = Arc::clone(&hook_fired);
+            extractor.register_error_hook(ServiceFilter::All, move |_s, _o, _err, _span| {
+                *hook_fired.lock().unwrap() = true;
+            });
+        }
+
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let connector_error = ConnectorError::io(Box::new(std::io::Error::other("boom")));
+        ctx.set_output_or_error(Err(OrchestratorError::connector(connector_error)));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("CONNECTOR".into()))
+        );
+        assert!(!*hook_fired.lock().unwrap());
+    }
+
+    #[test]
+    fn read_after_execution_timeout_error() {
+        let extractor = DefaultExtractor::<TestSpan>::new();
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        ctx.set_output_or_error(Err(OrchestratorError::timeout(Box::new(
+            std::io::Error::other("too slow"),
+        ))));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("TIMEOUT".into()))
+        );
+        assert!(span.status.is_some());
+    }
+
+    #[test]
+    fn read_after_execution_other_error() {
+        let extractor = DefaultExtractor::<TestSpan>::new();
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let mut ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        ctx.set_output_or_error(Err(OrchestratorError::other("something broke")));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("_OTHER".into()))
+        );
+        assert!(span.status.is_some());
+    }
+
+    #[test]
+    fn read_after_execution_no_output_or_error() {
+        let extractor = DefaultExtractor::<TestSpan>::new();
+        let mut cfg = cfg_with_operation("Fake", "Op");
+        let ctx = context::InterceptorContext::new(context::Input::erase(FakeInput));
+        let fctx = context::FinalizerInterceptorContextRef::from(&ctx);
+
+        let mut span = TestSpan::new();
+        let result = extractor.read_after_execution(&fctx, &mut cfg, &mut span);
+        assert!(result.is_ok());
+
+        assert_eq!(
+            span.get(semco::ERROR_TYPE),
+            Some(&Value::String("_OTHER".into()))
+        );
+        assert_eq!(
+            span.status,
+            Some(Status::error("SDK completed without output or error"))
+        );
     }
 }

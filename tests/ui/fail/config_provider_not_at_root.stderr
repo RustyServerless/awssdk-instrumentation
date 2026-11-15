@@ -1,0 +1,7 @@
+error[E0425]: cannot find function `aws_sdk_config` in the crate root
+ --> tests/ui/fail/config_provider_not_at_root.rs:7:5
+  |
+7 |     awssdk_instrumentation::aws_sdk_config_provider!();
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in the crate root
+  |
+  = note: this error originates in the macro `awssdk_instrumentation::aws_sdk_config_provider` (in Nightly builds, run with -Z macro-backtrace for more info)

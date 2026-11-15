@@ -133,3 +133,59 @@ pub fn extract_service_operation(cfg: &ConfigBag) -> (Service<'_>, Operation<'_>
         .expect("metadata always present");
     (aws_sdk_operation.service(), aws_sdk_operation.operation())
 }
+
+#[cfg(test)]
+mod tests {
+    use tracing::info_span;
+
+    use super::*;
+
+    #[test]
+    fn pause_until_finds_matching_ancestor_and_restores_on_drop() {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let span_a = info_span!(target: "aws_sdk_x::operation::y", "A");
+            let _enter_a = span_a.enter();
+            let span_b = info_span!("B");
+            let _enter_b = span_b.enter();
+            let span_c = info_span!("C");
+            let _enter_c = span_c.enter();
+
+            let result =
+                SpanPauser::pause_until(|s| s.metadata().map(|m| m.name() == "A").unwrap_or(false));
+
+            let (guard, matched) = result.expect("predicate should match span A");
+            assert_eq!(matched.id(), span_a.id());
+            assert_eq!(Span::current().id(), span_a.id());
+
+            drop(guard);
+            assert_eq!(Span::current().id(), span_c.id());
+        });
+    }
+
+    #[test]
+    fn pause_until_no_match_returns_none_and_leaves_stack_unchanged() {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let span_a = info_span!(target: "aws_sdk_x::operation::y", "A");
+            let _enter_a = span_a.enter();
+            let span_c = info_span!("C");
+            let _enter_c = span_c.enter();
+
+            let result = SpanPauser::pause_until(|s| {
+                s.metadata()
+                    .map(|m| m.name() == "never_matches")
+                    .unwrap_or(false)
+            });
+
+            assert!(result.is_none());
+            assert_eq!(Span::current().id(), span_c.id());
+        });
+    }
+
+    #[test]
+    fn pause_until_with_no_entered_span_returns_none() {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let result = SpanPauser::pause_until(|_| true);
+            assert!(result.is_none());
+        });
+    }
+}

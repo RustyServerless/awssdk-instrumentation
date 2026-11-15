@@ -347,7 +347,9 @@ macro_rules! aws_sdk_config_provider {
         static AWS_SDK_CONFIG: ::std::sync::OnceLock<$crate::aws_config::SdkConfig> =
             ::std::sync::OnceLock::new();
         fn aws_sdk_config() -> &'static $crate::aws_config::SdkConfig {
-            AWS_SDK_CONFIG.get().unwrap()
+            AWS_SDK_CONFIG
+                .get()
+                .expect("sdk_config_init() must be awaited before using aws_sdk_config()")
         }
 
         const _: fn() = || {
@@ -355,7 +357,6 @@ macro_rules! aws_sdk_config_provider {
             crate::aws_sdk_config();
         };
 
-        #[deny(dead_code)]
         async fn sdk_config_init() {
             AWS_SDK_CONFIG
                 .set($crate::aws_config::load_from_env().await)
@@ -435,15 +436,66 @@ macro_rules! aws_sdk_client_provider {
         fn $name() -> $client {
             static CLIENT: ::std::sync::OnceLock<$client> = ::std::sync::OnceLock::new();
             CLIENT
-                .get_or_init(|| <$client>::new($crate::aws_sdk_config()))
+                .get_or_init(|| <$client>::new(aws_sdk_config()))
                 .clone()
         }
         const _: fn() = || {
             // Compile-time assertion that function is declared at the root
-            $crate::$name();
+            crate::$name();
         };
     };
     ($name:ident() -> $client:ty) => {
         $crate::aws_sdk_client_provider!($name() -> $client, interceptor = $crate::interceptor::DefaultInterceptor::new());
     };
+}
+
+#[cfg(all(test, feature = "tracing-backend"))]
+mod tests {
+    use super::*;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::InMemorySpanExporter;
+    use tracing::{debug_span, info_span, trace_span};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    #[test]
+    fn default_tracing_otel_layer_exports() {
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let tracer = provider.tracer("test");
+
+        let subscriber = tracing_subscriber::registry().with(default_tracing_otel_layer(tracer));
+
+        tracing::subscriber::with_default(subscriber, || {
+            // Should be included
+            let _info = info_span!(target: "my_app", "info_span").entered();
+            drop(_info);
+            let _sdk =
+                debug_span!(target: "aws_sdk_dynamodb::operation::get_item", "sdk_span").entered();
+            drop(_sdk);
+            let _runtime =
+                debug_span!(target: "my_crate::tracing_runtime_layer", "runtime_span").entered();
+            drop(_runtime);
+            // Should be filtered out
+            let _debug = debug_span!(target: "my_app", "debug_span").entered();
+            drop(_debug);
+            let _sdk_non_op =
+                debug_span!(target: "aws_sdk_dynamodb::config", "sdk_non_op").entered();
+            drop(_sdk_non_op);
+            let _trace = trace_span!(target: "other", "trace_span").entered();
+            drop(_trace);
+        });
+        provider.force_flush().unwrap();
+
+        let names = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .map(|span| span.name.to_string())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"info_span".to_string()));
+        assert!(names.contains(&"sdk_span".to_string()));
+        assert!(names.contains(&"runtime_span".to_string()));
+    }
 }

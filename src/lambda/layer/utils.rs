@@ -234,4 +234,32 @@ mod tests {
         let result: Result<XRayTraceHeader, _> = "".parse();
         assert!(result.is_err());
     }
+
+    #[test]
+    fn xray_trace_header_edge_cases() {
+        // Invalid hex in Root
+        let invalid_root = "Root=1-zzzz;Parent=53995c3f42cd8ad8;Sampled=1";
+        let result: Result<XRayTraceHeader, _> = invalid_root.parse();
+        assert!(result.is_err());
+
+        // Invalid hex in Parent
+        let invalid_parent =
+            "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=zzzzzzzzzzzzzzzz;Sampled=1";
+        let result: Result<XRayTraceHeader, _> = invalid_parent.parse();
+        assert!(result.is_err());
+
+        // Missing Sampled field entirely
+        let missing_sampled = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8";
+        let result: Result<XRayTraceHeader, _> = missing_sampled.parse();
+        assert!(result.is_err());
+
+        // Duplicate keys: first occurrence wins, later ones (even invalid ones) are ignored
+        let duplicate_keys = "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=0;Sampled=1;Parent=1111111111111111";
+        let parsed: XRayTraceHeader = duplicate_keys.parse().unwrap();
+        assert_eq!(
+            parsed.parent_id,
+            SpanId::from_hex("53995c3f42cd8ad8").unwrap()
+        );
+        assert_eq!(parsed.sampled, TraceFlags::NOT_SAMPLED);
+    }
 }

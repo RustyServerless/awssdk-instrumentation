@@ -111,131 +111,98 @@ impl<SW: SpanWrite> AttributeExtractor<SW> for SQSExtractor {
         }
 
         // Extract and set queue URL + destination name for every operation that has it
-        match operation {
-            "SendMessage" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<SendMessageInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "SendMessageBatch" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<SendMessageBatchInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "ReceiveMessage" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<ReceiveMessageInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "DeleteMessage" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<DeleteMessageInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "DeleteMessageBatch" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<DeleteMessageBatchInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "ChangeMessageVisibility" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<ChangeMessageVisibilityInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "ChangeMessageVisibilityBatch" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<ChangeMessageVisibilityBatchInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "GetQueueAttributes" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<GetQueueAttributesInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "SetQueueAttributes" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<SetQueueAttributesInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "DeleteQueue" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<DeleteQueueInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "PurgeQueue" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<PurgeQueueInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "ListDeadLetterSourceQueues" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<ListDeadLetterSourceQueuesInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "ListQueueTags" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<ListQueueTagsInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "TagQueue" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<TagQueueInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "UntagQueue" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<UntagQueueInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "AddPermission" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<AddPermissionInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
-            "RemovePermission" => set_queue_url_attrs(
-                span,
-                input
-                    .downcast_ref::<RemovePermissionInput>()
-                    .expect("correct type")
-                    .queue_url(),
-            ),
+        let queue_url = match operation {
+            "SendMessage" => input
+                .downcast_ref::<SendMessageInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "SendMessageBatch" => input
+                .downcast_ref::<SendMessageBatchInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "ReceiveMessage" => input
+                .downcast_ref::<ReceiveMessageInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "DeleteMessage" => input
+                .downcast_ref::<DeleteMessageInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "DeleteMessageBatch" => input
+                .downcast_ref::<DeleteMessageBatchInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "ChangeMessageVisibility" => input
+                .downcast_ref::<ChangeMessageVisibilityInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "ChangeMessageVisibilityBatch" => input
+                .downcast_ref::<ChangeMessageVisibilityBatchInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "GetQueueAttributes" => input
+                .downcast_ref::<GetQueueAttributesInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "SetQueueAttributes" => input
+                .downcast_ref::<SetQueueAttributesInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "DeleteQueue" => input
+                .downcast_ref::<DeleteQueueInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "PurgeQueue" => input
+                .downcast_ref::<PurgeQueueInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "ListDeadLetterSourceQueues" => input
+                .downcast_ref::<ListDeadLetterSourceQueuesInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "ListQueueTags" => input
+                .downcast_ref::<ListQueueTagsInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "TagQueue" => input
+                .downcast_ref::<TagQueueInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "UntagQueue" => input
+                .downcast_ref::<UntagQueueInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "AddPermission" => input
+                .downcast_ref::<AddPermissionInput>()
+                .expect("correct type")
+                .queue_url(),
+
+            "RemovePermission" => input
+                .downcast_ref::<RemovePermissionInput>()
+                .expect("correct type")
+                .queue_url(),
+
             // Operations without queue_url: CreateQueue, GetQueueUrl,
             // ListQueues, CancelMessageMoveTask, ListMessageMoveTasks,
             // StartMessageMoveTask
-            _ => {}
+            _ => None,
         };
+        set_queue_url_attrs(span, queue_url);
     }
 
     fn extract_output(
@@ -546,5 +513,45 @@ mod tests {
         );
         // Trailing slash produces an empty last segment, which is filtered out
         assert_eq!(span.get(semco::MESSAGING_DESTINATION_NAME), None);
+    }
+
+    // Tests for SQSExtractor::extract_input — 2 consolidated tests
+
+    #[test]
+    fn extract_input_send_message_with_queue_url() {
+        let extractor = SQSExtractor::new();
+
+        let sdk_input = SendMessageInput::builder()
+            .queue_url("https://sqs.us-east-1.amazonaws.com/123456789012/my-queue")
+            .message_body("hello")
+            .build()
+            .unwrap();
+        let input = context::Input::erase(sdk_input);
+        let mut span = TestSpan::new();
+
+        extractor.extract_input("SQS", "SendMessage", &input, &mut span);
+
+        assert_eq!(
+            span.get(semco::MESSAGING_SYSTEM),
+            Some(&Value::from("aws_sqs"))
+        );
+        assert_eq!(
+            span.get(semco::MESSAGING_OPERATION_NAME),
+            Some(&Value::from("SendMessage"))
+        );
+        assert_eq!(
+            span.get(semco::MESSAGING_OPERATION_TYPE),
+            Some(&Value::from("send"))
+        );
+        assert_eq!(
+            span.get(semco::AWS_SQS_QUEUE_URL),
+            Some(&Value::from(
+                "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+            ))
+        );
+        assert_eq!(
+            span.get(semco::MESSAGING_DESTINATION_NAME),
+            Some(&Value::from("my-queue"))
+        );
     }
 }

@@ -1,0 +1,35 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/lambda_runtime_bad_telemetry_init.rs:15:1
+   |
+15 | awssdk_instrumentation::make_lambda_runtime!(handler, telemetry_init = bad_init,);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | expected fn pointer, found fn item
+   | arguments to this function are incorrect
+   |
+   = note: expected fn pointer `fn() -> SdkTracerProvider`
+                 found fn item `fn() -> () {bad_init}`
+note: function defined here
+  --> tests/ui/fail/lambda_runtime_bad_telemetry_init.rs:15:1
+   |
+15 | awssdk_instrumentation::make_lambda_runtime!(handler, telemetry_init = bad_init,);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::make_lambda_runtime` which comes from the expansion of the macro `awssdk_instrumentation::make_lambda_runtime` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/lambda_runtime_bad_telemetry_init.rs:15:1
+   |
+15 | awssdk_instrumentation::make_lambda_runtime!(handler, telemetry_init = bad_init,);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | expected `&SdkTracerProvider`, found `&()`
+   | arguments to this function are incorrect
+   |
+   = note: expected reference `&SdkTracerProvider`
+              found reference `&()`
+note: function defined here
+  --> src/lambda/macros.rs
+   |
+   | pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
+   |        ^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::make_lambda_runtime` which comes from the expansion of the macro `awssdk_instrumentation::make_lambda_runtime` (in Nightly builds, run with -Z macro-backtrace for more info)
