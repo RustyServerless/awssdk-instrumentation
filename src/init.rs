@@ -347,7 +347,9 @@ macro_rules! aws_sdk_config_provider {
         static AWS_SDK_CONFIG: ::std::sync::OnceLock<$crate::aws_config::SdkConfig> =
             ::std::sync::OnceLock::new();
         fn aws_sdk_config() -> &'static $crate::aws_config::SdkConfig {
-            AWS_SDK_CONFIG.get().unwrap()
+            AWS_SDK_CONFIG
+                .get()
+                .expect("sdk_config_init() must be awaited before using aws_sdk_config()")
         }
 
         const _: fn() = || {
@@ -355,7 +357,6 @@ macro_rules! aws_sdk_config_provider {
             crate::aws_sdk_config();
         };
 
-        #[deny(dead_code)]
         async fn sdk_config_init() {
             AWS_SDK_CONFIG
                 .set($crate::aws_config::load_from_env().await)
