@@ -9,6 +9,7 @@ fn macros_compile() {
     unsafe {
         std::env::set_var("AWS_REGION", "us-east-1");
         std::env::set_var("AWS_EC2_METADATA_DISABLED", "true");
+        std::env::set_var("CARGO_PROFILE_DEV_DEBUG", "0");
     }
 
     let t = trybuild::TestCases::new();
