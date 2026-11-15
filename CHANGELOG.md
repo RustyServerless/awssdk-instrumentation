@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.4.0...HEAD
+
+## [0.4.0] - 2026-11-15
+
 ### Changed
 
 - `aws_sdk_config_provider!`: calling `aws_sdk_config()` before `sdk_config_init()` has been awaited now panics with an explicit message instead of a bare `unwrap()` panic.
-- `make_lambda_runtime!` now insert the instanciation of every SDK Client asked for in the `main` function, before launching the runtime to take advantage of the unthrottled Lambda Init phase
+- `make_lambda_runtime!` now inserts the instantiation of every requested SDK client in the `main` function, before launching the runtime, to take advantage of the unthrottled Lambda Init phase.
 
 ### Fixed
 
@@ -21,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - If you used `make_lambda_runtime!` with `extra_init_code` and somehow relied on the AWS SDK Client being un-initialized at this stage, your code will break with this release.
 
-[Unreleased]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/RustyServerless/awssdk-instrumentation/compare/v0.3.0...v0.4.0
 
 ## [0.3.0] - 2026-09-25
 

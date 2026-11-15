@@ -63,7 +63,9 @@ pub fn default_flush_tracer(tracer_provider: &SdkTracerProvider) {
 /// - **`client_fn() -> SdkClientType`** — zero or more SDK client declarations.
 ///   Each generates a `OnceLock`-backed accessor that returns the AWS SDK client
 ///   with an interceptor type implementing [`Intercept`] pre-attached that will generate
-///   appropriate spans.
+///   appropriate spans. Every declared client is created in `main()` before
+///   `extra_init_code` runs, so its construction cost is paid during the Lambda
+///   Init phase rather than the first invocation.
 ///
 /// # Prerequisites
 ///

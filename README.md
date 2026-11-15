@@ -61,7 +61,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-awssdk-instrumentation = "0.3"
+awssdk-instrumentation = "0.4"
 ```
 
 Or using cargo:
@@ -123,7 +123,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 
 // 2. One macro call generates main(), telemetry init, and the Tower layer.
 //    Client declarations produce OnceLock-backed singletons with the
-//    interceptor pre-attached.
+//    interceptor pre-attached, created in main() during the Lambda Init phase.
 awssdk_instrumentation::make_lambda_runtime!(
     handler,
     dynamodb_client() -> aws_sdk_dynamodb::Client
