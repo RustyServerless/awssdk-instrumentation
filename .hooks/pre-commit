@@ -5,7 +5,7 @@ set -e
 STAGED_FILES=$(git diff --cached --name-only)
 
 # Check if any Rust-related files are staged
-RUST_CHANGES=$(echo "$STAGED_FILES" | grep -E "^(src/|Cargo.toml|Cargo.lock)" || true)
+RUST_CHANGES=$(echo "$STAGED_FILES" | grep -E "^(src/|tests/|Cargo.toml|Cargo.lock)" || true)
 
 # If no Rust-related files are changed, exit early
 if [ -z "$RUST_CHANGES" ]; then
